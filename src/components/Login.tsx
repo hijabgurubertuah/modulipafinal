@@ -14,6 +14,7 @@ import { GardenDecorations } from './GardenDecorations';
 import { AppSettings, StudentItem, ClassItem } from '../types';
 import { firestoreService } from '../services/firestoreService';
 import { sheetService } from '../services/sheetService';
+import { getDirectCsvUrl } from '../config/spreadsheetConfig';
 
 interface LoginProps {
   username: string;
@@ -54,19 +55,21 @@ export const Login: React.FC<LoginProps> = ({
       setLoading(true);
       setErrorMsg(null);
 
-      // Fetch fresh settings from Firestore first to get the absolute latest CSV link directly from the cloud
+      // 1. Cek konfigurasi langsung terlebih dahulu, lalu remote Firestore
+      const directUrl = getDirectCsvUrl();
+
       let freshSettings = null;
       try {
         freshSettings = await firestoreService.fetchRemoteSettings();
       } catch (e) {
-        console.warn("Direct remote settings fetch failed, falling back to cached:", e);
+        console.warn("Direct remote settings fetch note:", e);
       }
       
       if (!freshSettings) {
         freshSettings = await firestoreService.getSettings();
       }
       
-      const csvUrl = freshSettings?.studentCsvUrl || settings?.studentCsvUrl;
+      const csvUrl = directUrl || freshSettings?.studentCsvUrl || settings?.studentCsvUrl;
 
       if (csvUrl && csvUrl.trim().startsWith('http')) {
         // Hapus data lama terlebih dahulu jika tombol Segarkan ditekan
@@ -77,18 +80,47 @@ export const Login: React.FC<LoginProps> = ({
 
         // Unduh ulang data siswa dan kelas terbaru ke lokal langsung dari link spreadsheet CSV
         const res = await sheetService.pullStudentsFromCsv(csvUrl);
-        if (res.success && res.classes && res.students) {
+        if (res.success && res.classes && res.students && res.classes.length > 0) {
           setClasses(res.classes);
           setStudents(res.students);
-        } else {
+          firestoreService.replaceAllClasses(res.classes).catch(() => {});
+          firestoreService.replaceAllStudents(res.students).catch(() => {});
+          return;
+        } else if (forceSync) {
           setErrorMsg(res.message || "Gagal menarik data dari link CSV Google Spreadsheet.");
         }
+      } else if (forceSync) {
+        setErrorMsg("Belum ada link CSV yang tersimpan di Firebase. Silakan simpan link di Panel Admin atau file konfigurasi.");
+      }
+
+      // Fallback: gunakan data kelas dan siswa yang tersimpan di database lokal / Firestore
+      const [savedClasses, savedStudents] = await Promise.all([
+        firestoreService.getClasses(),
+        firestoreService.getStudents()
+      ]);
+
+      if (savedClasses.length > 0) {
+        setClasses(savedClasses);
       } else {
-        setErrorMsg("Link CSV Spreadsheet login belum diatur oleh guru di Panel Admin.");
+        // Default standard classes jika belum pernah sinkronisasi agar siswa tetap bisa login
+        setClasses([
+          { id: '7A', name: '7A' },
+          { id: '7B', name: '7B' },
+          { id: '7C', name: '7C' },
+          { id: '8A', name: '8A' },
+          { id: '8B', name: '8B' },
+          { id: '9A', name: '9A' }
+        ]);
+      }
+
+      if (savedStudents.length > 0) {
+        setStudents(savedStudents);
       }
     } catch (err: any) {
-      console.error("Gagal memuat data siswa:", err);
-      setErrorMsg(err?.message || "Gagal menghubungkan Google Spreadsheet. Pastikan link valid dan di-publish sebagai CSV.");
+      console.warn("Gagal memuat data siswa:", err);
+      if (forceSync) {
+        setErrorMsg(err?.message || "Gagal menghubungkan Google Spreadsheet. Pastikan link valid dan di-publish sebagai CSV.");
+      }
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -181,18 +213,19 @@ export const Login: React.FC<LoginProps> = ({
                       <School size={13} className="text-purple-300" />
                       Pilih Kelas Anda:
                     </span>
-                    {settings?.studentCsvUrl && (
-                      <button
-                        type="button"
-                        onClick={() => loadDynamicData(true)}
-                        disabled={isSyncing}
-                        className="text-[10px] text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer font-bold select-none disabled:opacity-50"
-                        title="Tarik pembaruan dari Spreadsheet"
-                      >
-                        <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} />
-                        <span>Segarkan</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSyncing(true);
+                        loadDynamicData(true);
+                      }}
+                      disabled={isSyncing}
+                      className="text-[10px] text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer font-bold select-none disabled:opacity-50"
+                      title="Tarik pembaruan dari Spreadsheet"
+                    >
+                      <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} />
+                      <span>Segarkan</span>
+                    </button>
                   </label>
                   <div className="relative">
                     <select
@@ -229,7 +262,7 @@ export const Login: React.FC<LoginProps> = ({
                   </label>
 
                   <div className="relative">
-                    {userClass && userClass !== 'TAMU' ? (
+                    {userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
                       // Dropdown Mode for easier student selection
                       <div className="relative">
                         <select
@@ -251,7 +284,7 @@ export const Login: React.FC<LoginProps> = ({
                         </div>
                       </div>
                     ) : (
-                      // Manual Input Mode only for TAMU
+                      // Manual Input Mode when no student list or for TAMU
                       <input 
                         id="login-name-input"
                         type="text" 
