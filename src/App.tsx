@@ -124,14 +124,27 @@ const App = () => {
     const savedIsTeacher = localStorage.getItem('ipa_is_teacher') === 'true';
 
     if (savedIsTeacher || savedUser?.toLowerCase() === 'gurusmp' || savedClass?.toLowerCase() === 'guru') {
-      setIsTeacherMode(true);
+      if (savedIsLoggedIn) {
+        setIsTeacherMode(true);
+      }
     }
 
     if (savedUser) {
-      setUsername(savedUser);
-      if (savedClass) setUserClass(savedClass);
       if (savedIsLoggedIn) {
+        setUsername(savedUser);
+        if (savedClass) setUserClass(savedClass);
         setIsLoggedIn(true);
+      } else {
+        // Jika belum login dan tersimpan adalah 'gurusmp', bersihkan agar tidak muncul ke publik (rahasia)
+        if (savedUser.toLowerCase() === 'gurusmp' || savedClass?.toLowerCase() === 'guru') {
+          localStorage.removeItem('ipa_user');
+          localStorage.removeItem('ipa_user_class');
+          setUsername('');
+          setUserClass('');
+        } else {
+          setUsername(savedUser);
+          if (savedClass) setUserClass(savedClass);
+        }
       }
     }
     if (savedProgress) {
@@ -292,13 +305,22 @@ const App = () => {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setIsTeacherMode(false);
+    localStorage.removeItem('ipa_is_teacher');
     setCurrentView('home');
     setSelectedMaterialId(null);
     localStorage.removeItem('ipa_current_view');
     localStorage.removeItem('ipa_selected_material_id');
     localStorage.removeItem('ipa_perkenalan_active_page');
     localStorage.setItem('ipa_is_logged_in', 'false');
-    // Note: we DO NOT remove ipa_user or ipa_user_class here so they persist on returning to Login screen
+
+    // Jika akun yang logout adalah gurusmp atau kelas guru, bersihkan agar tidak muncul di form login
+    if (username.toLowerCase() === 'gurusmp' || userClass?.toLowerCase() === 'guru') {
+      localStorage.removeItem('ipa_user');
+      localStorage.removeItem('ipa_user_class');
+    }
+    setUsername('');
+    setUserClass('');
     setShowLogoutConfirm(false);
   };
 
@@ -482,6 +504,9 @@ const App = () => {
             setIsLoggedIn(false);
             setIsTeacherMode(false);
             localStorage.removeItem('ipa_is_teacher');
+            localStorage.setItem('ipa_is_logged_in', 'false');
+            localStorage.removeItem('ipa_user');
+            localStorage.removeItem('ipa_user_class');
             setUsername('');
             setUserClass('');
             setCurrentView('home');
@@ -581,11 +606,11 @@ const App = () => {
             {/* Profile (Tombol Nama & Tombol Exit Icon-Only) */}
             <div className="flex-1 min-w-0 flex items-center justify-between px-2.5 py-1.5 bg-white/5 rounded-xl border border-white/5 shadow-inner gap-1.5">
               <div className="flex flex-col min-w-0 flex-1 text-left">
-                <span className="text-xs font-black truncate opacity-95 leading-tight tracking-tight" title={username}>
-                  {username || 'Siswa'}
+                <span className="text-xs font-black truncate opacity-95 leading-tight tracking-tight" title={isTeacher ? 'Guru / Pengajar' : username}>
+                  {isTeacher ? 'Guru / Pengajar' : (username || 'Siswa')}
                 </span>
                 <span className="text-[8px] opacity-50 font-bold uppercase tracking-wider leading-none mt-0.5">
-                  {userClass?.toUpperCase() === 'TAMU' ? 'Akses Tamu' : `Kelas ${userClass || '-'}`}
+                  {isTeacher ? 'Mode Pengajar' : userClass?.toUpperCase() === 'TAMU' ? 'Akses Tamu' : `Kelas ${userClass || '-'}`}
                 </span>
               </div>
               <button 

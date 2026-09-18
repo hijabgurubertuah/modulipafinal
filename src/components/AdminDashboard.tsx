@@ -3505,7 +3505,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="text-xs text-purple-900 leading-relaxed">
                           <strong className="font-bold">Keamanan & Hak Akses Panel Guru:</strong>
                           <p className="mt-0.5 text-purple-800">
-                            Tombol <em>Panel Admin (Guru)</em> hanya akan muncul dan dapat diakses jika pengguna login dengan username <strong>gurusmp</strong>. Siswa biasa yang login dengan nama mereka tidak akan melihat tombol panel ini.
+                            Tombol <em>Panel Admin (Guru)</em> bersifat rahasia dan hanya akan muncul serta dapat diakses oleh akun Guru/Pengajar yang berwenang. Siswa biasa yang login dengan nama mereka tidak akan melihat tombol panel ini.
                           </p>
                         </div>
                       </div>
@@ -3657,13 +3657,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Password Admin / Guru (Untuk Masuk Panel Ini)
                         </label>
                         <input
-                          type="text"
+                          type="password"
                           value={settings.adminPassword || ''}
                           onChange={e => setSettings({ ...settings, adminPassword: e.target.value })}
                           className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-mono"
                         />
                         <p className="text-[11px] text-slate-500 mt-1">
-                          Gunakan kata sandi ini saat masuk ke panel melalui tombol Panel Admin atau username 'gurusmp'.
+                          Gunakan kata sandi ini saat masuk ke panel melalui tombol Panel Admin.
                         </p>
                       </div>
                     </div>

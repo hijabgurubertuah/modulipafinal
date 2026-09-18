@@ -657,9 +657,21 @@ export const firestoreService = {
     }
   },
 
-  // Replace all classes with a new list from CSV (purely local cache, no classes in Firebase)
+  // Synchronous cache getters for instant (<1ms) initial UI render
+  getClassesSync: (): ClassItem[] => {
+    return getSafeCached<ClassItem[]>('classes') || [];
+  },
+
+  getStudentsSync: (): StudentItem[] => {
+    return getSafeCached<StudentItem[]>('students') || [];
+  },
+
+  // Replace all classes with a new list from CSV (saved locally in browser storage)
   replaceAllClasses: async (newClasses: ClassItem[]): Promise<void> => {
     setSafeCached('classes', newClasses);
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}classes_last_sync`, new Date().toISOString());
+    } catch {}
   },
 
   // --- STUDENTS & LOGINS CRUD (Instant SWR Cache) ---
@@ -747,31 +759,12 @@ export const firestoreService = {
     }
   },
 
-  // Replace all students with a new list (mirrors Google Sheet exactly, clearing old students)
+  // Replace all students with a new list from CSV (saved locally in browser storage)
   replaceAllStudents: async (newStudents: StudentItem[]): Promise<void> => {
-    // 1. Update local cache immediately
     setSafeCached('students', newStudents);
-
-    // 2. Sync to Firestore (delete existing and write new ones)
     try {
-      const colRef = collection(db, 'students');
-      const snap = await withTimeout(getDocs(colRef), 4000).catch(() => null);
-      if (snap && !snap.empty) {
-        const newIds = new Set(newStudents.map(s => s.id));
-        const deletePromises = snap.docs
-          .filter(d => !newIds.has(d.id))
-          .map(d => deleteDoc(d.ref).catch(() => {}));
-        await Promise.allSettled(deletePromises);
-      }
-
-      const savePromises = newStudents.map(s => {
-        const docRef = doc(db, 'students', s.id);
-        return setDoc(docRef, s, { merge: true }).catch(() => {});
-      });
-      await Promise.allSettled(savePromises);
-    } catch (err) {
-      console.warn('replaceAllStudents Firestore sync error:', err);
-    }
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}students_last_sync`, new Date().toISOString());
+    } catch {}
   },
 
   // Record login event (without auto-creating unregistered students)

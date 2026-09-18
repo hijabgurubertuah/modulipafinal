@@ -39,10 +39,35 @@ export const Login: React.FC<LoginProps> = ({
   const welcomeTitle = settings?.homeWelcomeTitle || "Selamat Datang di Modul Berkebun SMPN 1 Bengkalis";
   const quoteText = settings?.homeQuote || "“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”";
 
-  // Dynamic states for Spreadsheet / DB loaded data
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [students, setStudents] = useState<StudentItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Dynamic states for Spreadsheet / DB loaded data initialized immediately from local browser cache
+  const [classes, setClasses] = useState<ClassItem[]>(() => {
+    try {
+      const cached = firestoreService.getClassesSync();
+      return Array.isArray(cached) && cached.length > 0 ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [students, setStudents] = useState<StudentItem[]>(() => {
+    try {
+      const cached = firestoreService.getStudentsSync();
+      return Array.isArray(cached) && cached.length > 0 ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Zero-latency: If local cache already contains classes, do not block the user with a loader!
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const cached = firestoreService.getClassesSync();
+      return !cached || cached.length === 0;
+    } catch {
+      return true;
+    }
+  });
+
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
@@ -52,7 +77,9 @@ export const Login: React.FC<LoginProps> = ({
   // Load classes and students dynamically
   const loadDynamicData = async (forceSync = false) => {
     try {
-      setLoading(true);
+      if (forceSync || classes.length === 0) {
+        setLoading(true);
+      }
       setErrorMsg(null);
 
       // 1. Cek konfigurasi langsung terlebih dahulu, lalu remote Firestore
@@ -72,18 +99,20 @@ export const Login: React.FC<LoginProps> = ({
       const csvUrl = directUrl || freshSettings?.studentCsvUrl || settings?.studentCsvUrl;
 
       if (csvUrl && csvUrl.trim().startsWith('http')) {
-        // Hapus data lama terlebih dahulu jika tombol Segarkan ditekan
+        // Hapus data lama terlebih dahulu jika tombol Segarkan ditekan secara manual
         if (forceSync) {
           setClasses([]);
           setStudents([]);
         }
 
-        // Unduh ulang data siswa dan kelas terbaru ke lokal langsung dari link spreadsheet CSV
+        // Unduh data siswa dan kelas terbaru langsung dari link spreadsheet CSV
         const res = await sheetService.pullStudentsFromCsv(csvUrl);
         if (res.success && res.classes && res.students && res.classes.length > 0) {
           setClasses(res.classes);
           setStudents(res.students);
-          firestoreService.replaceAllClasses(res.classes).catch(() => {});
+          // SIMPAN DI LOKAL BROWSER AGAR LOGIN SELANJUTNYA INSTAN
+          await firestoreService.replaceAllClasses(res.classes);
+          await firestoreService.replaceAllStudents(res.students);
           return;
         } else if (forceSync) {
           setErrorMsg(res.message || "Gagal menarik data dari link CSV Google Spreadsheet.");
@@ -93,11 +122,13 @@ export const Login: React.FC<LoginProps> = ({
       }
 
       // Fallback: gunakan data kelas dari cache unduhan CSV lokal sebelumnya jika ada
-      const savedClasses = await firestoreService.getClasses();
+      const savedClasses = firestoreService.getClassesSync();
+      const savedStudents = firestoreService.getStudentsSync();
       if (savedClasses && savedClasses.length > 0) {
         setClasses(savedClasses);
-      } else {
-        setClasses([]);
+        if (savedStudents && savedStudents.length > 0) {
+          setStudents(savedStudents);
+        }
       }
     } catch (err: any) {
       console.warn("Gagal memuat data siswa:", err);
@@ -233,40 +264,44 @@ export const Login: React.FC<LoginProps> = ({
                   </label>
 
                   <div className="relative">
-                    {userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
-                      // Dropdown Mode for easier student selection
-                      <div className="relative">
-                        <select
-                          id="login-name-select"
-                          value={username}
-                          onChange={(e) => setUsername(e.target.value)}
-                          disabled={!userClass}
-                          className="w-full px-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden appearance-none cursor-pointer bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md disabled:bg-slate-200 disabled:cursor-not-allowed"
-                        >
-                          <option value="">-- PILIH NAMA ANDA --</option>
-                          {filteredStudents.map((std) => (
-                            <option key={std.id} value={std.name}>
-                              {std.name}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-purple-900">
-                          <ChevronDown size={20} />
+                    {/* Never show 'gurusmp' by default - it is secret */}
+                    {(() => {
+                      const displayUsername = username.toLowerCase() === 'gurusmp' ? '' : username;
+                      return userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
+                        // Dropdown Mode for easier student selection
+                        <div className="relative">
+                          <select
+                            id="login-name-select"
+                            value={displayUsername}
+                            onChange={(e) => setUsername(e.target.value)}
+                            disabled={!userClass}
+                            className="w-full px-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden appearance-none cursor-pointer bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md disabled:bg-slate-200 disabled:cursor-not-allowed"
+                          >
+                            <option value="">-- PILIH NAMA ANDA --</option>
+                            {filteredStudents.map((std) => (
+                              <option key={std.id} value={std.name}>
+                                {std.name}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-purple-900">
+                            <ChevronDown size={20} />
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      // Manual Input Mode when no student list or for TAMU
-                      <input 
-                        id="login-name-input"
-                        type="text" 
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder=""
-                        className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
-                        autoComplete="off"
-                        disabled={!userClass}
-                      />
-                    )}
+                      ) : (
+                        // Manual Input Mode when no student list or for TAMU
+                        <input 
+                          id="login-name-input"
+                          type="text" 
+                          value={displayUsername}
+                          onChange={(e) => setUsername(e.target.value)}
+                          placeholder=""
+                          className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
+                          autoComplete="off"
+                          disabled={!userClass}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
 
