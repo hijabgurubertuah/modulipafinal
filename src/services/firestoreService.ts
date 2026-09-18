@@ -1040,10 +1040,19 @@ export const firestoreService = {
   getSettings: async (): Promise<AppSettings> => {
     const cached = getSafeCached<AppSettings>('settings');
     if (cached) {
+      // Auto-migrate standard URLs or fill empty studentCsvUrl
+      let updated = false;
       if (cached.googleAppsScriptUrl && cached.googleAppsScriptUrl.includes('AKfycbzLsyFBV2ntaJiXODGepHSTCfubPWmRdIO27iuXwbgVEA3Cs1vMw5c0F1KuOcd_A2NEsw')) {
         cached.googleAppsScriptUrl = DEFAULT_SETTINGS.googleAppsScriptUrl;
         cached.sheetUrl = DEFAULT_SETTINGS.sheetUrl;
         cached.sheetId = DEFAULT_SETTINGS.sheetId;
+        updated = true;
+      }
+      if (!cached.studentCsvUrl || !cached.studentCsvUrl.trim().startsWith('http')) {
+        cached.studentCsvUrl = DEFAULT_SETTINGS.studentCsvUrl;
+        updated = true;
+      }
+      if (updated) {
         setSafeCached('settings', cached);
       }
       setTimeout(() => {
@@ -1062,13 +1071,21 @@ export const firestoreService = {
 
   fetchRemoteSettings: async (): Promise<AppSettings | null> => {
     const docRef = doc(db, 'settings', 'general');
-    const snap = await withTimeout(getDoc(docRef), 3000);
+    const snap = await withTimeout(getDoc(docRef), 4000);
     if (snap.exists()) {
       const settings = snap.data() as AppSettings;
+      let updated = false;
       if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.includes('AKfycbzLsyFBV2ntaJiXODGepHSTCfubPWmRdIO27iuXwbgVEA3Cs1vMw5c0F1KuOcd_A2NEsw')) {
         settings.googleAppsScriptUrl = DEFAULT_SETTINGS.googleAppsScriptUrl;
         settings.sheetUrl = DEFAULT_SETTINGS.sheetUrl;
         settings.sheetId = DEFAULT_SETTINGS.sheetId;
+        updated = true;
+      }
+      if (!settings.studentCsvUrl || !settings.studentCsvUrl.trim().startsWith('http')) {
+        settings.studentCsvUrl = DEFAULT_SETTINGS.studentCsvUrl;
+        updated = true;
+      }
+      if (updated) {
         firestoreService.saveSettings(settings).catch(() => {});
       }
       setSafeCached('settings', settings);

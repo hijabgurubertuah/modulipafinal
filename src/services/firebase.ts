@@ -4,7 +4,8 @@ import {
   getFirestore, 
   Firestore,
   persistentLocalCache,
-  persistentMultipleTabManager
+  persistentMultipleTabManager,
+  memoryLocalCache
 } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 import firebaseConfigJson from '../../firebase-applet-config.json';
@@ -49,10 +50,23 @@ try {
     ? activeConfig.firestoreDatabaseId
     : undefined;
 
+  // Resilient Cache Configuration for Sandbox/iFrame safety
+  let cacheConfig;
+  try {
+    const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
+    if (isInsideIframe) {
+      cacheConfig = memoryLocalCache();
+    } else {
+      cacheConfig = persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      });
+    }
+  } catch {
+    cacheConfig = memoryLocalCache();
+  }
+
   const firestoreSettings = {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    }),
+    localCache: cacheConfig,
     experimentalAutoDetectLongPolling: true,
     experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true
