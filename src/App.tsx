@@ -66,8 +66,6 @@ const App = () => {
   const [modules, setModules] = useState<AppModule[]>(() => getDefaultModules());
   const [isTeacherMode, setIsTeacherMode] = useState<boolean>(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(false);
-  const [welcomeMessage, setWelcomeMessage] = useState<string>('');
 
   useEffect(() => {
     let isMounted = true;
@@ -243,8 +241,6 @@ const App = () => {
       setIsLoggedIn(true);
       setProgress(prev => ({ ...prev, username: 'GURUSMP' }));
       setCurrentView('home');
-      setWelcomeMessage("Selamat datang, Guru! Selamat mengajar dan belajar...");
-      setShowWelcomeModal(true);
       return;
     }
 
@@ -260,8 +256,6 @@ const App = () => {
       localStorage.setItem('ipa_user', 'TAMU');
       localStorage.setItem('ipa_user_class', 'TAMU');
       localStorage.setItem('ipa_is_logged_in', 'true');
-      setWelcomeMessage("Selamat datang! Anda masuk sebagai Tamu, selamat belajar...");
-      setShowWelcomeModal(true);
       return;
     }
 
@@ -288,8 +282,6 @@ const App = () => {
       setIsLoggedIn(true);
       setProgress(prev => ({ ...prev, username: currentUsername }));
       setCurrentView('home');
-      setWelcomeMessage("Selamat datang, " + currentUsername + "! Selamat belajar...");
-      setShowWelcomeModal(true);
       
       // Save for next time
       localStorage.setItem('ipa_user', currentUsername);
@@ -1235,38 +1227,6 @@ const App = () => {
           <p className="text-[9px] text-white/30 font-medium text-center italic">
             Warna utama dan teks akan menyesuaikan secara otomatis untuk kenyamanan Anda.
           </p>
-        </div>
-      </Dialog>
-
-      {/* Welcome Dialog */}
-      <Dialog 
-        show={showWelcomeModal} 
-        onClose={() => setShowWelcomeModal(false)} 
-        maxWidth="max-w-md"
-        hideHeader={true}
-        customBg="bg-gradient-to-b from-purple-900/95 to-purple-950/98 backdrop-blur-xl border border-purple-500/30"
-      >
-        <div className="p-6 md:p-8 text-center space-y-6">
-          <div className="relative mx-auto w-20 h-20">
-            <div className="absolute inset-0 bg-emerald-500/30 blur-2xl rounded-full animate-pulse" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-3xl flex items-center justify-center shadow-xl">
-              <Icons.GraduationCap size={40} className="text-white drop-shadow-lg" />
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            <h3 className="text-2xl font-black text-white tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Selamat Datang!</h3>
-            <p className="text-base text-purple-100 font-bold leading-relaxed whitespace-pre-line">
-              {welcomeMessage}
-            </p>
-          </div>
-
-          <button 
-            onClick={() => setShowWelcomeModal(false)}
-            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-black shadow-[0_10px_25px_rgba(16,185,129,0.3)] hover:shadow-[0_15px_35px_rgba(16,185,129,0.4)] hover:-translate-y-0.5 active:scale-95 transition-all uppercase tracking-wider text-xs cursor-pointer"
-          >
-            Mulai Belajar Sekarang 🍇
-          </button>
         </div>
       </Dialog>
 

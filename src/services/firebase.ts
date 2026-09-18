@@ -54,7 +54,7 @@ try {
       tabManager: persistentMultipleTabManager()
     }),
     experimentalAutoDetectLongPolling: true,
-    experimentalForceLongPolling: false,
+    experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true
   };
 

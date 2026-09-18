@@ -517,28 +517,6 @@ export const sheetService = {
   },
 
   /**
-   * Helper to convert regular Google Sheets link to CORS export CSV link
-   */
-  convertToCsvUrl: (url: string): string => {
-    const clean = url.trim();
-    if (!clean.startsWith('http')) return clean;
-    if (!clean.includes('docs.google.com/spreadsheets')) return clean;
-    
-    // Match the spreadsheet ID
-    const match = clean.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match && match[1]) {
-      const id = match[1];
-      // If it's already a published CSV, keep it
-      if (clean.includes('pub?output=csv') || clean.includes('pub?gid=')) {
-        return clean;
-      }
-      // Otherwise, convert to export CSV
-      return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
-    }
-    return clean;
-  },
-
-  /**
    * Pull and parse student list from a published Google Sheet CSV URL
    * This parses a single sheet/tab which contains multiple classes (7 classes, etc.)
    * and groups/extracts classes and students neatly.
@@ -554,10 +532,36 @@ export const sheetService = {
     }
 
     try {
-      const targetUrl = sheetService.convertToCsvUrl(csvUrl);
-      const res = await fetch(targetUrl);
-      if (!res.ok) {
-        return { success: false, message: `Gagal mengunduh CSV dari ${targetUrl}. HTTP Status: ${res.status} ${res.statusText}` };
+      let targetUrl = csvUrl.trim();
+      
+      // Auto-convert standard Google Sheets editor URL to CSV export format for maximum convenience!
+      if (targetUrl.includes('docs.google.com/spreadsheets') && !targetUrl.includes('output=csv') && !targetUrl.includes('export?format=csv')) {
+        const sheetIdMatch = targetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (sheetIdMatch && sheetIdMatch[1]) {
+          const sheetId = sheetIdMatch[1];
+          const gidMatch = targetUrl.match(/[#&]gid=([0-9]+)/);
+          const gid = gidMatch ? gidMatch[1] : '0';
+          targetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+        }
+      }
+
+      let res;
+      try {
+        res = await fetch(targetUrl);
+      } catch (fetchErr) {
+        console.warn("Direct fetch failed, trying CORS proxy fallback...", fetchErr);
+        try {
+          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+          res = await fetch(proxyUrl);
+        } catch (proxyErr) {
+          console.warn("corsproxy.io failed, trying allorigins fallback...", proxyErr);
+          const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+          res = await fetch(proxyUrl2);
+        }
+      }
+
+      if (!res || !res.ok) {
+        return { success: false, message: `Gagal mengunduh CSV. HTTP Status: ${res ? res.status : 'Unknown'}` };
       }
       const text = await res.text();
       

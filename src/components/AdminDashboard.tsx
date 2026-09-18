@@ -212,7 +212,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // --- Student CSV Import State ---
   const [studentCsvUrl, setStudentCsvUrl] = useState<string>('');
   const [isPullingCsv, setIsPullingCsv] = useState<boolean>(false);
-  const [isSavingCsvUrl, setIsSavingCsvUrl] = useState<boolean>(false);
 
   // --- Load Initial Data ---
   const loadAllData = async () => {
@@ -1243,29 +1242,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // --- Handlers: Save Student CSV URL Only ---
-  const handleSaveCsvUrl = async () => {
-    if (!studentCsvUrl || !studentCsvUrl.trim().startsWith('http')) {
-      showNotification('Harap masukkan URL Google Spreadsheet yang valid!', 'error');
-      return;
-    }
-
-    setIsSavingCsvUrl(true);
-    try {
-      const updatedSettings = {
-        ...settings,
-        studentCsvUrl: studentCsvUrl.trim()
-      };
-      setSettings(updatedSettings);
-      await firestoreService.saveSettings(updatedSettings);
-      showNotification('URL Google Spreadsheet berhasil disimpan ke database!', 'success');
-    } catch (err: any) {
-      showNotification(`Gagal menyimpan URL: ${err?.message || err}`, 'error');
-    } finally {
-      setIsSavingCsvUrl(false);
-    }
-  };
-
   // --- Handlers: Pull Student Data From CSV ---
   const handlePullStudentsFromCsv = async () => {
     if (!studentCsvUrl || !studentCsvUrl.trim().startsWith('http')) {
@@ -1513,8 +1489,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     {
       category: 'Siswa & Kelas',
       items: [
-        { id: 'kelas' as const, label: 'Kelola Kelas', icon: GraduationCap, count: classes.length, color: 'text-emerald-600' },
-        { id: 'siswa' as const, label: 'Data Siswa & Login', icon: Users, count: students.length, color: 'text-emerald-600' },
         { id: 'nilai' as const, label: 'Rekapitulasi Nilai', icon: BarChart3, count: scores.length, color: 'text-emerald-600' },
         { id: 'log' as const, label: 'Log Aktivitas', icon: Activity, count: undefined, color: 'text-emerald-600' }
       ]
@@ -1522,7 +1496,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     {
       category: 'Integrasi & Sistem',
       items: [
-        { id: 'spreadsheet' as const, label: 'Google Sheets & Akun Guru', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
+        { id: 'spreadsheet' as const, label: 'Login Siswa (Spreadsheet CSV)', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
         { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' }
       ]
     }
@@ -2643,6 +2617,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         Pantau riwayat login siswa, kelas, dan status progres pembelajaran.
                       </p>
                     </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const defaultClass = studentFilterClass !== 'ALL' && studentFilterClass
+                            ? studentFilterClass
+                            : (classes[0]?.name || classes[0]?.id || '');
+                          setBulkStudentClass(defaultClass);
+                          setShowBulkModal(true);
+                        }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-300 cursor-pointer"
+                      >
+                        <FileSpreadsheet size={14} />
+                        <span>Impor Teks Manual</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const defaultClass = studentFilterClass !== 'ALL' && studentFilterClass
+                            ? studentFilterClass
+                            : (classes[0]?.name || classes[0]?.id || '');
+                          setEditingStudent({ name: '', userClass: defaultClass, nisn: '', status: 'Aktif' });
+                          setIsStudentModalOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      >
+                        <Plus size={15} />
+                        <span>Tambah Siswa Manual</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Link CSV Google Spreadsheet Section */}
@@ -2667,25 +2670,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={e => setStudentCsvUrl(e.target.value)}
                         className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
                       />
-                      <div className="flex gap-2 shrink-0">
-                        <button
-                          onClick={handleSaveCsvUrl}
-                          disabled={isSavingCsvUrl || !studentCsvUrl.trim()}
-                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer w-full md:w-auto"
-                        >
-                          {isSavingCsvUrl ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" />
-                              <span>Menyimpan...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Save size={14} />
-                              <span>Simpan Link</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        onClick={handlePullStudentsFromCsv}
+                        disabled={isPullingCsv || !studentCsvUrl.trim()}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
+                      >
+                        {isPullingCsv ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Menarik Daftar Siswa...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download size={14} />
+                            <span>Tarik Daftar Siswa</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
                     <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5 text-[11px] text-indigo-900 leading-relaxed">
@@ -3041,342 +3042,126 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ========================================================================= */}
-              {/* TAB 7: INTEGRASI GOOGLE SPREADSHEET & GOOGLE APPS SCRIPT                  */}
+              {/* TAB 7: LOGIN SISWA (SPREADSHEET CSV) CONFIGURATION                       */}
               {/* ========================================================================= */}
               {activeTab === 'spreadsheet' && (
-                <div className="space-y-6 max-w-4xl">
+                <div className="space-y-6 max-w-4xl bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
                   {/* Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
+                  <div className="pb-4 border-b border-slate-200">
+                    <h2 className="text-xl font-bold text-slate-950 flex items-center gap-2">
+                      <FileSpreadsheet className="text-purple-600" size={24} />
+                      Konfigurasi Login Siswa (Spreadsheet CSV)
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Atur link Google Spreadsheet yang telah dipublikasikan sebagai CSV di sini. Data ini akan langsung digunakan secara real-time oleh halaman login siswa.
+                    </p>
+                  </div>
+
+                  {/* Input Form */}
+                  <div className="space-y-4">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-slate-900">Google Sheets & Integrasi Apps Script</h2>
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Siap Pakai
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Kelola integrasi data nilai siswa, penambahan & penghapusan tab sheet per kelas, serta pengunggahan gambar ke Google Drive.
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        Link Google Spreadsheet (Diterbitkan sebagai CSV)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+                        value={settings.studentCsvUrl || ''}
+                        onChange={e => setSettings({ ...settings, studentCsvUrl: e.target.value })}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-hidden font-mono"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                        Langkah mendapatkan link CSV: Di Google Sheets Anda, klik <strong>File &gt; Share &gt; Publish to web</strong>. Pilih tab siswa Anda (atau seluruh dokumen), pilih format <strong>Comma-separated values (.csv)</strong>, kemudian klik Publish dan salin linknya ke sini.
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {settings.sheetUrl && (
-                        <a
-                          href={settings.sheetUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-300 transition-all"
-                        >
-                          <ExternalLink size={14} />
-                          <span>Buka Spreadsheet</span>
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 1. SEKSI INTEGRASI TANPA LOGIN GOOGLE */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                        <CheckCircle2 size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">Integrasi Otomatis Apps Script (Bebas Login Google)</h3>
-                        <p className="text-xs text-slate-500">Semua aksi pengunggahan gambar, sinkronisasi siswa & nilai diproses aman di sisi server Apps Script</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-950 leading-relaxed">
-                      <p className="font-bold text-emerald-900 mb-1">✨ Mengapa Tidak Perlu Login Akun Google?</p>
-                      <p className="text-emerald-800">
-                        Aplikasi ini telah dihubungkan dengan <strong>Web App Google Apps Script</strong>. Apps Script bertindak sebagai backend yang secara otomatis menangani izin akses ke Google Drive & Google Spreadsheet. Dengan demikian:
-                      </p>
-                      <ul className="list-disc list-inside mt-2 space-y-1 text-emerald-900 font-medium">
-                        <li>Mengedit materi modul & mengunggah gambar ke Google Drive dapat dilakukan langsung tanpa tombol login Google.</li>
-                        <li>Siswa & guru dapat mengakses daftar kelas dan mengirimkan hasil kuis dari mana saja secara real-time.</li>
-                        <li>Seluruh data tersimpan rapi pada tab Google Spreadsheet dan database Firestore.</li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  {/* 2. SEKSI KONFIGURASI TERTANAM (SELF-CONTAINED / NO-SETUP REQUIREMENT) */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                        <Database size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">Konfigurasi Aktif Saat Ini (Tertanam di Kode)</h3>
-                        <p className="text-xs text-slate-500">
-                          Konfigurasi ini tertanam langsung dan otomatis aktif tanpa setup baru saat aplikasi di-remix atau di-deploy.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Notice Banner */}
-                    <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-indigo-900">
-                      <Sparkles size={16} className="text-indigo-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold">Siap Pakai & Bebas Setup Ulang</p>
-                        <p className="text-indigo-700 text-[11px] mt-0.5 leading-relaxed">
-                          Aplikasi ini sudah menyimpan konfigurasi default spreadsheet dan database langsung di kode program. Saat di-remix dengan akun Google baru atau di-deploy ke hosting apapun, seluruh koneksi tetap aktif tanpa perlu setup Firebase, Drive, atau Spreadsheet baru.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Active Sheet Card */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <FileSpreadsheet size={14} className="text-emerald-600" />
-                            Google Spreadsheet Target
-                          </span>
-                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
-                            Aktif
-                          </span>
-                        </div>
-                        <p className="font-mono text-[11px] text-slate-600 truncate bg-white p-2 rounded border border-slate-200">
-                          {settings.sheetUrl || DEFAULT_SETTINGS.sheetUrl}
-                        </p>
-                        <div className="mt-2 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">ID Spreadsheet:</span>
-                          <span className="font-mono font-bold text-slate-800">
-                            {extractSpreadsheetId(settings.sheetUrl || DEFAULT_SETTINGS.sheetUrl || '') || '1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Active GAS Card */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                            <Globe size={14} className="text-indigo-600" />
-                            Web App Google Apps Script
-                          </span>
-                          <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">
-                            Tersambung
-                          </span>
-                        </div>
-                        <p className="font-mono text-[11px] text-slate-600 truncate bg-white p-2 rounded border border-slate-200">
-                          {settings.googleAppsScriptUrl || DEFAULT_SETTINGS.googleAppsScriptUrl}
-                        </p>
-                        <div className="mt-2 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">Akses Eksekusi:</span>
-                          <span className="font-semibold text-emerald-700">Anyone (Siswa bisa kirim nilai)</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Connection Test & Input Controls */}
-                    <div className="pt-3 border-t border-slate-100 space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">
-                          Ubah URL Google Spreadsheet (Opsional)
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.sheetUrl || ''}
-                          onChange={(e) => setSettings({ ...settings, sheetUrl: e.target.value })}
-                          placeholder="https://docs.google.com/spreadsheets/d/1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU/edit"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">
-                          Ubah URL Web App Apps Script (Opsional)
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.googleAppsScriptUrl || ''}
-                          onChange={(e) => setSettings({ ...settings, googleAppsScriptUrl: e.target.value })}
-                          placeholder="https://script.google.com/macros/s/AKfycbwcdea5JWF2NxbfzVdH9Namnxdf_mlTe6ry7wHoVolRscTsXbKDypQbJCGndPvHB0Sd/exec"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleTestSheetConnection}
-                            disabled={isTestingSheetConnection}
-                            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                          >
-                            <RefreshCw size={13} className={isTestingSheetConnection ? "animate-spin" : ""} />
-                            <span>{isTestingSheetConnection ? 'Menguji...' : 'Uji Koneksi'}</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setSettings({
-                                ...settings,
-                                sheetUrl: DEFAULT_SETTINGS.sheetUrl,
-                                googleAppsScriptUrl: DEFAULT_SETTINGS.googleAppsScriptUrl
-                              });
-                              showNotification('Konfigurasi berhasil di-reset ke nilai default bawaan kode.', 'info');
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-                          >
-                            <RotateCcw size={13} />
-                            <span>Reset Bawaan Kode</span>
-                          </button>
-                        </div>
-
-                        <button
-                          onClick={handleSaveSettings}
-                          disabled={isSavingSettings}
-                          className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          <Save size={14} />
-                          <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}</span>
-                        </button>
-                      </div>
-
-                      {/* Sheet Test Result Display */}
-                      {sheetTestResult && (
-                        <div className={`p-3 rounded-xl border text-xs ${
-                          sheetTestResult.success 
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
-                            : 'bg-rose-50 border-rose-200 text-rose-900'
-                        }`}>
-                          <div className="flex items-center gap-2 font-bold mb-1">
-                            {sheetTestResult.success ? <CheckCircle2 size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-rose-600" />}
-                            <span>{sheetTestResult.message}</span>
-                          </div>
-                          {sheetTestResult.success && (
-                            <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-emerald-200/60 text-[11px]">
-                              <div>Kelas di Sheet: <strong>{sheetTestResult.classesCount || 0}</strong></div>
-                              <div>Siswa di Sheet: <strong>{sheetTestResult.studentsCount || 0}</strong></div>
-                              <div>Nilai di Sheet: <strong>{sheetTestResult.scoresCount || 0}</strong></div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 3. SEKSI METODE EDIT SPREADSHEET & SINKRONISASI */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                        <Sliders size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">Mekanisme Pengeditan & Sinkronisasi Spreadsheet</h3>
-                        <p className="text-xs text-slate-500">
-                          Dua metode yang digunakan sistem untuk membaca, menulis, dan mengelola tab sheet
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                      {/* Method 1: Google Apps Script Web App */}
-                      <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            <h4 className="font-bold text-slate-900">Metode 1: Google Apps Script (Publik)</h4>
-                          </div>
-                          <p className="text-slate-600 text-[11px] leading-relaxed">
-                            Jalur ini digunakan saat <strong>siswa mengerjakan kuis</strong> dan login. Siswa <em>tidak perlu</em> login Google. Nilai otomatis masuk ke tab <code className="text-slate-800 font-bold">Nilai_[KELAS]</code> melalui webhook Apps Script.
-                          </p>
-                        </div>
-                        <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">Target Pengguna:</span>
-                          <span className="font-bold text-emerald-700">Siswa & Pengisian Kuis</span>
-                        </div>
-                      </div>
-
-                      {/* Method 2: Google Sheets API v4 Direct */}
-                      <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                            <h4 className="font-bold text-slate-900">Metode 2: Google Sheets API Direct (Guru)</h4>
-                          </div>
-                          <p className="text-slate-600 text-[11px] leading-relaxed">
-                            Jalur ini digunakan oleh <strong>Guru/Admin</strong> di portal ini setelah login akun Google. Menggunakan Sheets API resmi untuk <strong>menambah tab</strong> saat kelas dibuat, <strong>menghapus tab</strong> saat kelas dihapus, serta menata seluruh tab.
-                          </p>
-                        </div>
-                        <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">Target Pengguna:</span>
-                          <span className="font-bold text-blue-700">Guru / Admin Portal</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="pt-4 border-t border-slate-200 space-y-3">
-                      <h4 className="text-xs font-bold text-slate-800">Aksi Sinkronisasi Data:</h4>
-                      
-                      {/* Pull Mirror Sync Banner */}
-                      <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
-                        <Info size={16} className="text-amber-700 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold">Sinkronisasi Tarik Data (Cermin Penuh):</p>
-                          <p className="text-amber-800 text-[11px] mt-0.5">
-                            Ketika Anda menekan <strong>Tarik Data dari Spreadsheet</strong>, data di aplikasi akan disesuaikan 100% dengan isi sheet. Jika di spreadsheet data kosong (0 siswa/0 kelas), maka data di aplikasi juga akan ikut kosong.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2.5">
-                        {/* Pull Data Button */}
-                        <button
-                          onClick={handlePullDataFromSheet}
-                          disabled={isSyncingSheet}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                          title="Tarik seluruh data kelas, siswa, dan nilai dari Google Spreadsheet ke aplikasi"
-                        >
-                          <Download size={14} className={isSyncingSheet ? "animate-bounce" : ""} />
-                          <span>{isSyncingSheet ? 'Menarik Data...' : 'Tarik Data dari Spreadsheet (Sinkron Cermin)'}</span>
-                        </button>
-
-                        {/* Push Data Button */}
-                        <button
-                          onClick={handlePushDataToSheet}
-                          disabled={isSyncingSheet}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                          title="Kirim seluruh data lokal (kelas, siswa, nilai) ke Google Spreadsheet"
-                        >
-                          <Upload size={14} className={isSyncingSheet ? "animate-bounce" : ""} />
-                          <span>{isSyncingSheet ? 'Mengirim Data...' : 'Kirim / Timpa Data ke Spreadsheet'}</span>
-                        </button>
-                      </div>
-
-                      {syncStatusMsg && (
-                        <p className="text-xs text-emerald-700 font-semibold animate-pulse mt-2 flex items-center gap-1.5">
-                          <Loader2 size={13} className="animate-spin" />
-                          {syncStatusMsg}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 4. SEKSI KODE APPS SCRIPT (DOKUMENTASI LENGKAP) */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Code2 size={18} className="text-slate-700" />
-                        <h3 className="text-sm font-bold text-slate-900">Kode Google Apps Script Backend (Opsional)</h3>
-                      </div>
+                    {/* Test Connection & Save Controls */}
+                    <div className="flex flex-wrap gap-3 pt-2">
                       <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(sheetService.getAppsScriptTemplate(extractSpreadsheetId(settings.sheetUrl || '') || ''));
-                          setCopiedScript(true);
-                          setTimeout(() => setCopiedScript(false), 3000);
-                          showNotification('Kode Google Apps Script berhasil disalin ke clipboard!', 'success');
+                        type="button"
+                        onClick={async () => {
+                          if (!settings.studentCsvUrl || !settings.studentCsvUrl.trim().startsWith('http')) {
+                            showNotification('Harap masukkan URL CSV Google Spreadsheet terlebih dahulu!', 'error');
+                            return;
+                          }
+                          setIsTestingSheetConnection(true);
+                          try {
+                            const res = await sheetService.pullStudentsFromCsv(settings.studentCsvUrl);
+                            if (res.success && res.classes && res.students) {
+                              showNotification(`Koneksi Sukses! Berhasil mendeteksi ${res.classes.length} Kelas dan ${res.students.length} Siswa secara lokal.`, 'success');
+                              setClasses(res.classes);
+                              setStudents(res.students);
+                            } else {
+                              showNotification(`Koneksi Gagal: ${res.message || "Pastikan link di-publish sebagai CSV."}`, 'error');
+                            }
+                          } catch (e: any) {
+                            showNotification(`Error saat menarik data: ${e?.message || e}`, 'error');
+                          } finally {
+                            setIsTestingSheetConnection(false);
+                          }
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                        disabled={isTestingSheetConnection || !settings.studentCsvUrl}
+                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
                       >
-                        {copiedScript ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
-                        <span>{copiedScript ? 'Tersalin!' : 'Salin Kode Script'}</span>
+                        {isTestingSheetConnection ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Menguji & Menarik Data...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw size={14} />
+                            <span>Uji & Tarik Data Siswa ke Lokal</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsSavingSettings(true);
+                          try {
+                            await firestoreService.saveSettings(settings);
+                            showNotification('Link CSV berhasil disimpan ke cloud Firebase!', 'success');
+                          } catch (e: any) {
+                            showNotification(`Gagal menyimpan: ${e?.message || e}`, 'error');
+                          } finally {
+                            setIsSavingSettings(false);
+                          }
+                        }}
+                        disabled={isSavingSettings}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
+                      >
+                        {isSavingSettings ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Menyimpan ke Firebase...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save size={14} />
+                            <span>Simpan Link CSV ke Firebase</span>
+                          </>
+                        )}
                       </button>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      Jika Anda ingin membuat spreadsheet baru dari nol di Google Drive lain, salin kode ini dan tempelkan di menu <strong>Extensions &gt; Apps Script</strong> pada spreadsheet Anda.
-                    </p>
+
+                    {/* Quick Preview of parsed data (if loaded) */}
+                    {classes.length > 0 && (
+                      <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                        <h4 className="text-xs font-bold text-slate-800">Preview Kelas Terdeteksi:</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {classes.map(c => (
+                            <span key={c.id} className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold">
+                              Kelas {c.name || c.id}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Data ini ditarik langsung ke lokal browser Anda untuk pengujian saja. Seluruh database Firestore tetap bersih karena data diunduh real-time oleh siswa saat login.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
