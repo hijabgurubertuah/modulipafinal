@@ -54,8 +54,18 @@ export const Login: React.FC<LoginProps> = ({
       setLoading(true);
       setErrorMsg(null);
 
-      // Fetch fresh settings from Firestore first to get the absolute latest CSV link
-      const freshSettings = await firestoreService.getSettings();
+      // Fetch fresh settings from Firestore first to get the absolute latest CSV link directly from the cloud
+      let freshSettings = null;
+      try {
+        freshSettings = await firestoreService.fetchRemoteSettings();
+      } catch (e) {
+        console.warn("Direct remote settings fetch failed, falling back to cached:", e);
+      }
+      
+      if (!freshSettings) {
+        freshSettings = await firestoreService.getSettings();
+      }
+      
       const csvUrl = freshSettings?.studentCsvUrl || settings?.studentCsvUrl;
 
       if (csvUrl && csvUrl.trim().startsWith('http')) {
@@ -247,7 +257,7 @@ export const Login: React.FC<LoginProps> = ({
                         type="text" 
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Ketik 'TAMU' atau nama Anda..."
+                        placeholder=""
                         className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
                         autoComplete="off"
                         disabled={!userClass}
