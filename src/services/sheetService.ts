@@ -487,6 +487,36 @@ export const sheetService = {
   },
 
   /**
+   * Upload an image to Google Drive via Apps Script Web App without requiring Google Login
+   */
+  uploadImageToDrive: async (base64Image: string, filename?: string): Promise<{ success: boolean; url?: string; message: string }> => {
+    const scriptUrl = await getEffectiveScriptUrl();
+    if (!scriptUrl || !scriptUrl.startsWith('http')) {
+      return { success: false, message: 'URL Google Apps Script belum diatur.' };
+    }
+
+    try {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'uploadImage',
+          imageBase64: base64Image,
+          filename: filename || `gambar_modul_${Date.now()}.jpg`
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'success' && data.url) {
+        return { success: true, url: data.url, message: 'Gambar berhasil diunggah ke Google Drive!' };
+      }
+      return { success: false, message: data.message || 'Gagal mengunggah gambar ke Drive.' };
+    } catch (err: any) {
+      console.error('Error uploading image to Drive via GAS:', err);
+      return { success: false, message: err?.message || 'Error saat mengunggah gambar ke Apps Script.' };
+    }
+  },
+
+  /**
    * Generate the full, clean Google Apps Script code for the user's Spreadsheet
    * featuring multi-tab per-class structure (Siswa_7A, Nilai_7A, etc.)
    */
@@ -986,6 +1016,41 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     
+    // 7. Aksi Unggah Gambar ke Google Drive Tanpa Perlu Login Akun di Browser
+    if (action === 'uploadImage' || action === 'uploadImageToDrive') {
+      var base64Data = data.imageBase64 || data.base64 || data.fileBase64;
+      var fileName = data.filename || data.fileName || ('Gambar_Modul_' + Date.now() + '.jpg');
+      
+      if (!base64Data) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Data gambar base64 tidak ditemukan' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      if (base64Data.indexOf('base64,') > -1) {
+        base64Data = base64Data.split('base64,')[1];
+      }
+      
+      var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'image/jpeg', fileName);
+      var folderName = 'Gambar_Modul_Digital_IPA';
+      var folders = DriveApp.getFoldersByName(folderName);
+      var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      
+      var file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      
+      var fileId = file.getId();
+      var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
+      var driveViewUrl = 'https://drive.google.com/uc?export=view&id=' + fileId;
+      
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Gambar berhasil diunggah ke Google Drive',
+        url: directUrl,
+        driveViewUrl: driveViewUrl,
+        fileId: fileId
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     return ContentService.createTextOutput(JSON.stringify({ status: 'unknown_action' }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
