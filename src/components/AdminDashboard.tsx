@@ -2643,35 +2643,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         Pantau riwayat login siswa, kelas, dan status progres pembelajaran.
                       </p>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => {
-                          const defaultClass = studentFilterClass !== 'ALL' && studentFilterClass
-                            ? studentFilterClass
-                            : (classes[0]?.name || classes[0]?.id || '');
-                          setBulkStudentClass(defaultClass);
-                          setShowBulkModal(true);
-                        }}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-300 cursor-pointer"
-                      >
-                        <FileSpreadsheet size={14} />
-                        <span>Impor Teks Manual</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          const defaultClass = studentFilterClass !== 'ALL' && studentFilterClass
-                            ? studentFilterClass
-                            : (classes[0]?.name || classes[0]?.id || '');
-                          setEditingStudent({ name: '', userClass: defaultClass, nisn: '', status: 'Aktif' });
-                          setIsStudentModalOpen(true);
-                        }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                      >
-                        <Plus size={15} />
-                        <span>Tambah Siswa Manual</span>
-                      </button>
-                    </div>
                   </div>
 
                   {/* Link CSV Google Spreadsheet Section */}
@@ -2700,7 +2671,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           onClick={handleSaveCsvUrl}
                           disabled={isSavingCsvUrl || !studentCsvUrl.trim()}
-                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-700 border border-slate-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer w-full md:w-auto"
                         >
                           {isSavingCsvUrl ? (
                             <>
@@ -2711,23 +2682,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <>
                               <Save size={14} />
                               <span>Simpan Link</span>
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={handlePullStudentsFromCsv}
-                          disabled={isPullingCsv || !studentCsvUrl.trim()}
-                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                        >
-                          {isPullingCsv ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" />
-                              <span>Menarik Data...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Download size={14} />
-                              <span>Tarik & Sinkronkan</span>
                             </>
                           )}
                         </button>

@@ -230,15 +230,13 @@ export const Login: React.FC<LoginProps> = ({
   const filteredStudentSuggestions = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
 
-    // Base candidates:
-    // If a class is selected (e.g. 7A, 8A, 9A), TAMU is removed and strictly shows that class's students
-    let baseList: StudentItem[] = [];
-    if (userClass && userClass !== 'guru' && userClass.toUpperCase() !== 'TAMU') {
-      baseList = [...classStudents];
-    } else {
-      // No class selected or TAMU selected: show TAMU first, followed by all students
-      baseList = [TAMU_STUDENT, ...allStudents.filter(s => s.name.toUpperCase() !== 'TAMU')];
+    // Sesuai instruksi: Jika kelas TIDAK dipilih, tidak perlu muncul list siswa, hanya ada dropdown pilihannya yaitu "TAMU"
+    if (!userClass) {
+      return [TAMU_STUDENT];
     }
+
+    // Jika kelas dipilih, tampilkan daftar nama siswa kelas tersebut (tidak usah ada TAMU di daftarnya)
+    const baseList = [...classStudents];
 
     if (!query) {
       return baseList;
@@ -246,35 +244,20 @@ export const Login: React.FC<LoginProps> = ({
 
     return baseList.filter(s => 
       s.name.toLowerCase().includes(query) || 
-      (s.nisn && s.nisn.toLowerCase().includes(query)) ||
-      (s.userClass && s.userClass.toLowerCase().includes(query))
+      (s.nisn && s.nisn.toLowerCase().includes(query))
     );
-  }, [classStudents, allStudents, userClass, searchTerm, TAMU_STUDENT]);
+  }, [classStudents, userClass, searchTerm, TAMU_STUDENT]);
 
   const handleClassChange = (selectedCls: string) => {
     setAuthError('');
     setUserClass(selectedCls);
-    // When a specific class is selected, clear TAMU or any student from a different class
-    if (username) {
-      if (username.trim().toUpperCase() === 'TAMU' || username.trim().toLowerCase() === 'gurusmp') {
-        setUsername('');
-        setSearchTerm('');
-      } else {
-        const existsInNewClass = allStudents.some(
-          s => s.userClass?.trim().toUpperCase() === selectedCls.trim().toUpperCase() &&
-               s.name.trim().toUpperCase() === username.trim().toUpperCase()
-        );
-        if (!existsInNewClass) {
-          setUsername('');
-          setSearchTerm('');
-        }
-      }
-    }
-    // Auto open student dropdown once class is selected to guide the user
-    setTimeout(() => {
-      setIsDropdownOpen(true);
-      if (inputRef.current) inputRef.current.focus();
-    }, 100);
+    
+    // Sesuai instruksi: Jika kelas tidak dipilih atau berganti kelas, kolom nama otomatis kosong
+    setUsername('');
+    setSearchTerm('');
+    
+    // Sesuai instruksi: Tidak otomatis keluar dropdown (tidak otomatis terbuka/fokus)
+    setIsDropdownOpen(false);
   };
 
   const handleInputChange = (val: string) => {
@@ -500,11 +483,6 @@ export const Login: React.FC<LoginProps> = ({
                     <School size={13} className="text-purple-300" />
                     Pilih Kelas Anda:
                   </span>
-                  {userClass && (
-                    <span className="text-emerald-300 font-extrabold text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                      {classStudents.length} Siswa Terdaftar
-                    </span>
-                  )}
                 </label>
                 <div className="relative">
                   <select
@@ -517,10 +495,9 @@ export const Login: React.FC<LoginProps> = ({
                       {isLoadingData ? 'Memuat Daftar Kelas...' : '-- PILIH KELAS --'}
                     </option>
                     {classesList.map((c, idx) => {
-                      const count = allStudents.filter(s => (s.userClass || '').toUpperCase() === (c.name || c.id).toUpperCase()).length;
                       return (
                         <option key={`cls-${c.id || c.name}-${idx}`} value={c.name}>
-                          Kelas {c.name} {count > 0 ? `(${count} Siswa)` : ''}
+                          Kelas {c.name}
                         </option>
                       );
                     })}
@@ -549,14 +526,15 @@ export const Login: React.FC<LoginProps> = ({
                     onChange={(e) => handleInputChange(e.target.value)}
                     onFocus={() => setIsDropdownOpen(true)}
                     onClick={() => setIsDropdownOpen(true)}
-                    placeholder={userClass && userClass !== 'TAMU' ? `Ketik / pilih nama Anda...` : `Pilih 'TAMU' atau ketik nama...`}
-                    className="w-full pl-5 pr-12 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
+                    readOnly={!!userClass}
+                    placeholder={userClass ? `Pilih nama Anda...` : `Pilih 'TAMU' atau ketik nama...`}
+                    className={`w-full pl-5 pr-12 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400 ${userClass ? 'cursor-pointer' : ''}`}
                     autoComplete="off"
                   />
 
                   {/* Clear / Status Action Icons */}
                   <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    {searchTerm && (
+                    {searchTerm && !userClass && (
                       <button
                         type="button"
                         onClick={handleClearInput}
@@ -570,7 +548,6 @@ export const Login: React.FC<LoginProps> = ({
                       type="button"
                       onClick={() => {
                         setIsDropdownOpen(!isDropdownOpen);
-                        if (inputRef.current) inputRef.current.focus();
                       }}
                       className="p-1 text-purple-900 hover:text-purple-700 transition-colors cursor-pointer"
                       title="Buka daftar siswa / akun tamu"
@@ -584,11 +561,11 @@ export const Login: React.FC<LoginProps> = ({
                 <AnimatePresence>
                   {isDropdownOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                      initial={{ opacity: 0, y: userClass ? 6 : -6, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      exit={{ opacity: 0, y: userClass ? 6 : -6, scale: 0.98 }}
                       transition={{ duration: 0.12 }}
-                      className="absolute z-50 left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl border-2 border-purple-300 overflow-hidden max-h-60 flex flex-col text-slate-800"
+                      className={`absolute z-50 left-0 right-0 ${userClass ? 'bottom-full mb-2.5' : 'mt-1.5'} bg-white rounded-2xl shadow-2xl border-2 border-purple-300 overflow-hidden max-h-60 flex flex-col text-slate-800`}
                     >
                       {/* Dropdown Student List */}
                       <div className="overflow-y-auto divide-y divide-slate-100 flex-1 p-1">
