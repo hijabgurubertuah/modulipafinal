@@ -84,37 +84,20 @@ export const Login: React.FC<LoginProps> = ({
           setClasses(res.classes);
           setStudents(res.students);
           firestoreService.replaceAllClasses(res.classes).catch(() => {});
-          firestoreService.replaceAllStudents(res.students).catch(() => {});
           return;
         } else if (forceSync) {
           setErrorMsg(res.message || "Gagal menarik data dari link CSV Google Spreadsheet.");
         }
       } else if (forceSync) {
-        setErrorMsg("Belum ada link CSV yang tersimpan di Firebase. Silakan simpan link di Panel Admin atau file konfigurasi.");
+        setErrorMsg("Belum ada link CSV. Silakan atur link CSV.");
       }
 
-      // Fallback: gunakan data kelas dan siswa yang tersimpan di database lokal / Firestore
-      const [savedClasses, savedStudents] = await Promise.all([
-        firestoreService.getClasses(),
-        firestoreService.getStudents()
-      ]);
-
-      if (savedClasses.length > 0) {
+      // Fallback: gunakan data kelas dari cache unduhan CSV lokal sebelumnya jika ada
+      const savedClasses = await firestoreService.getClasses();
+      if (savedClasses && savedClasses.length > 0) {
         setClasses(savedClasses);
       } else {
-        // Default standard classes jika belum pernah sinkronisasi agar siswa tetap bisa login
-        setClasses([
-          { id: '7A', name: '7A' },
-          { id: '7B', name: '7B' },
-          { id: '7C', name: '7C' },
-          { id: '8A', name: '8A' },
-          { id: '8B', name: '8B' },
-          { id: '9A', name: '9A' }
-        ]);
-      }
-
-      if (savedStudents.length > 0) {
-        setStudents(savedStudents);
+        setClasses([]);
       }
     } catch (err: any) {
       console.warn("Gagal memuat data siswa:", err);
@@ -192,18 +175,6 @@ export const Login: React.FC<LoginProps> = ({
             </div>
           ) : (
             <div className="mt-1 w-full max-w-xs md:max-w-md">
-              
-              {/* Optional Error / Syncing Alert */}
-              {errorMsg && (
-                <div className="mb-4 bg-amber-500/10 border border-amber-500/35 p-3 rounded-xl text-left flex items-start gap-2.5 text-xs text-amber-200">
-                  <AlertTriangle className="shrink-0 mt-0.5 text-amber-300" size={14} />
-                  <div>
-                    <p className="font-bold">Informasi Sinkronisasi</p>
-                    <p>{errorMsg}</p>
-                  </div>
-                </div>
-              )}
-
               <form onSubmit={onLogin} className="flex flex-col gap-4">
                 
                 {/* 1. SELECT KELAS (DYNAMIC FROM SPREADSHEET / FIREBASE) */}

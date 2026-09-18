@@ -10,7 +10,7 @@ export const SPREADSHEET_CONFIG = {
    * Contoh: '1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU'
    * ATAU Anda juga bisa menempelkan link CSV lengkap di sini.
    */
-  studentCsvOrSheetId: ""
+  studentCsvOrSheetId: "2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM"
 };
 
 /**

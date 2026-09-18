@@ -593,72 +593,44 @@ export const firestoreService = {
     return DEFAULT_STUDENTS;
   },
 
-  // --- CLASSES CRUD (Instant SWR Cache) ---
+  // --- CLASSES CRUD (Purely in-memory / local CSV cache - No classes stored in Firebase) ---
   getClasses: async (): Promise<ClassItem[]> => {
-    // 1. Instant cache return (<1ms)
     const cached = getSafeCached<ClassItem[]>('classes');
-    const isInit = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}classes_init`);
-    if (cached && (cached.length > 0 || isInit === 'true')) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteClasses().catch(() => {});
-      }, 50);
+    if (cached && Array.isArray(cached)) {
       return cached;
-    }
-
-    // 2. Fetch remote if no cache
-    try {
-      const remote = await firestoreService.fetchRemoteClasses();
-      if (remote && remote.length > 0) return remote;
-    } catch {}
-
-    // 3. Default fallback
-    setSafeCached('classes', DEFAULT_CLASSES);
-    firestoreService.syncLocalClassesToCloud(DEFAULT_CLASSES).catch(() => {});
-    return DEFAULT_CLASSES;
-  },
-
-  syncLocalClassesToCloud: async (classesToSync?: ClassItem[]): Promise<void> => {
-    try {
-      const clsList = classesToSync || (await firestoreService.getClasses());
-      for (const c of clsList) {
-        const docRef = doc(db, 'classes', c.id || c.name);
-        await setDoc(docRef, c, { merge: true }).catch(() => {});
-      }
-    } catch (e) {
-      console.warn('Background syncLocalClassesToCloud error:', e);
-    }
-  },
-
-  fetchRemoteClasses: async (): Promise<ClassItem[]> => {
-    const colRef = collection(db, 'classes');
-    const snap = await withTimeout(getDocs(colRef), 3500);
-    if (!snap.empty) {
-      const classMap = new Map<string, ClassItem>();
-      snap.forEach(docSnap => {
-        const item = docSnap.data() as ClassItem;
-        const key = (item.name || item.id || docSnap.id).trim().toUpperCase();
-        if (key && !classMap.has(key)) {
-          classMap.set(key, {
-            id: item.id || docSnap.id || key,
-            name: item.name || key,
-            isActive: item.isActive !== false,
-            studentCount: Number(item.studentCount || 0),
-            description: item.description || ''
-          });
-        }
-      });
-      const classes = Array.from(classMap.values());
-      classes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      setSafeCached('classes', classes);
-      return classes;
     }
     return [];
   },
 
-  saveClass: async (classItem: ClassItem): Promise<void> => {
-    // 1. Immediately update local storage
+  syncLocalClassesToCloud: async (_classesToSync?: ClassItem[]): Promise<void> => {
+    // Tidak ada kelas di Firebase, data kelas murni dari link CSV
+    return;
+  },
+
+  fetchRemoteClasses: async (): Promise<ClassItem[]> => {
+    // Tidak ada kelas di Firebase
+    return [];
+  },
+
+  clearAllClassesFromFirebase: async (): Promise<void> => {
     try {
-      const list = getSafeCached<ClassItem[]>('classes') || [...DEFAULT_CLASSES];
+      const colRef = collection(db, 'classes');
+      const snap = await withTimeout(getDocs(colRef), 5000).catch(() => null);
+      if (snap && !snap.empty) {
+        await Promise.allSettled(snap.docs.map(d => deleteDoc(d.ref)));
+      }
+      try {
+        localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}classes`);
+      } catch {}
+    } catch (e) {
+      console.warn('clearAllClassesFromFirebase note:', e);
+    }
+  },
+
+  saveClass: async (classItem: ClassItem): Promise<void> => {
+    // 1. Update local storage only
+    try {
+      const list = getSafeCached<ClassItem[]>('classes') || [];
       const cleanKey = (classItem.name || classItem.id).trim().toUpperCase();
       const index = list.findIndex(c => (c.id || '').toUpperCase() === cleanKey || (c.name || '').toUpperCase() === cleanKey);
       if (index >= 0) {
@@ -668,22 +640,13 @@ export const firestoreService = {
       }
       setSafeCached('classes', list);
     } catch {}
-
-    // 2. Save to Firestore
-    try {
-      const docRef = doc(db, 'classes', classItem.id);
-      await withTimeout(setDoc(docRef, classItem, { merge: true }), 8000);
-    } catch (e) {
-      console.warn('Firestore saveClass warning:', e);
-    }
   },
 
   deleteClass: async (classId: string): Promise<void> => {
-    const cleanKey = classId.trim().toUpperCase();
-    
-    // 1. Immediately update local storage cache
+    // 1. Update local storage only
     try {
       const list = getSafeCached<ClassItem[]>('classes') || [];
+      const cleanKey = classId.trim().toUpperCase();
       const filtered = list.filter(c => 
         (c.id || '').toUpperCase() !== cleanKey && 
         (c.name || '').toUpperCase() !== cleanKey
@@ -692,45 +655,11 @@ export const firestoreService = {
     } catch (e) {
       console.warn('Local cache deleteClass error:', e);
     }
-
-    // 2. Delete from Firestore asynchronously
-    try {
-      const docRef = doc(db, 'classes', classId);
-      await withTimeout(deleteDoc(docRef), 6000).catch(() => {});
-      if (classId !== cleanKey) {
-        const upperDocRef = doc(db, 'classes', cleanKey);
-        await deleteDoc(upperDocRef).catch(() => {});
-      }
-    } catch (e) {
-      console.warn('Firestore deleteClass docRef warning:', e);
-    }
   },
 
-  // Replace all classes with a new list (mirrors Google Sheet exactly, clearing old classes)
+  // Replace all classes with a new list from CSV (purely local cache, no classes in Firebase)
   replaceAllClasses: async (newClasses: ClassItem[]): Promise<void> => {
-    // 1. Update local cache immediately
     setSafeCached('classes', newClasses);
-
-    // 2. Sync to Firestore (delete existing and write new ones)
-    try {
-      const colRef = collection(db, 'classes');
-      const snap = await withTimeout(getDocs(colRef), 4000).catch(() => null);
-      if (snap && !snap.empty) {
-        const newIds = new Set(newClasses.map(c => (c.id || c.name).trim().toUpperCase()));
-        const deletePromises = snap.docs
-          .filter(d => !newIds.has(d.id.trim().toUpperCase()))
-          .map(d => deleteDoc(d.ref).catch(() => {}));
-        await Promise.allSettled(deletePromises);
-      }
-
-      const savePromises = newClasses.map(c => {
-        const docRef = doc(db, 'classes', c.id || c.name);
-        return setDoc(docRef, c, { merge: true }).catch(() => {});
-      });
-      await Promise.allSettled(savePromises);
-    } catch (err) {
-      console.warn('replaceAllClasses Firestore sync error:', err);
-    }
   },
 
   // --- STUDENTS & LOGINS CRUD (Instant SWR Cache) ---
@@ -1180,16 +1109,11 @@ export const firestoreService = {
         await firestoreService.saveQuiz(qz);
       }
 
-      onProgress?.('Menyiapkan daftar kelas...', 75);
-      for (const cls of DEFAULT_CLASSES) {
-        await firestoreService.saveClass(cls);
-      }
-
-      onProgress?.('Menyinkronkan bank game edukasi ke Firestore...', 85);
+      onProgress?.('Menyinkronkan bank game edukasi ke Firestore...', 75);
       const defaultGames = getDefaultGames();
       for (let i = 0; i < defaultGames.length; i++) {
         const gm = defaultGames[i];
-        onProgress?.(`Menyimpan Game: ${gm.title}...`, 85 + Math.round((i / defaultGames.length) * 10));
+        onProgress?.(`Menyimpan Game: ${gm.title}...`, 75 + Math.round((i / defaultGames.length) * 15));
         await firestoreService.saveGame(gm);
       }
 
@@ -1199,7 +1123,7 @@ export const firestoreService = {
       onProgress?.('Selesai!', 100);
       return { 
         success: true, 
-        message: `Berhasil menginisialisasi ${defaultModules.length} Modul, ${defaultQuizzes.length} Kuis, ${defaultGames.length} Game Edukasi, dan ${DEFAULT_CLASSES.length} Kelas ke Firebase Firestore!` 
+        message: `Berhasil menginisialisasi ${defaultModules.length} Modul, ${defaultQuizzes.length} Kuis, dan ${defaultGames.length} Game Edukasi ke Firebase Firestore!` 
       };
     } catch (error: any) {
       console.error('Seed initial data error:', error);
