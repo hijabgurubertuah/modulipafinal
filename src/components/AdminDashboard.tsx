@@ -76,6 +76,7 @@ import { firestoreService } from '../services/firestoreService';
 import { sheetService } from '../services/sheetService';
 import { DEFAULT_SETTINGS } from '../services/defaultData';
 import { extractSpreadsheetId } from '../services/googleSheetsDirectService';
+import { resolveCsvUrl, resolveSheetUrl } from '../config/spreadsheetConfig';
 import { IconComponent } from './IconComponent';
 import { VideoPlayer, getCleanVideoEmbedUrl } from './VideoPlayer';
 import { CustomGameRenderer } from './CustomGameRenderer';
@@ -212,6 +213,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // --- Student CSV Import State ---
   const [studentCsvUrl, setStudentCsvUrl] = useState<string>('');
   const [isPullingCsv, setIsPullingCsv] = useState<boolean>(false);
+  const [spreadsheetInput, setSpreadsheetInput] = useState<string>('');
+  const [csvInput, setCsvInput] = useState<string>('');
 
   // --- Load Initial Data ---
   const loadAllData = async () => {
@@ -250,6 +253,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       setSettings(activeSettings);
       setStudentCsvUrl(activeSettings.studentCsvUrl || '');
+      setSpreadsheetInput(activeSettings.sheetUrl || activeSettings.sheetId || '');
+      setCsvInput(activeSettings.studentCsvUrl || '');
       setGames(g);
       if (activeSettings.logoUrl) {
         setLogoUrlInput(activeSettings.logoUrl);
@@ -1242,6 +1247,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // --- Handler: Simpan Konfigurasi Spreadsheet & CSV ke Firebase ---
+  const handleSaveSpreadsheetConfig = async () => {
+    setIsSavingSettings(true);
+    try {
+      const rawSheet = spreadsheetInput.trim();
+      const rawCsv = csvInput.trim();
+
+      let finalSheetUrl = '';
+      let finalSheetId = '';
+      if (rawSheet) {
+        finalSheetUrl = resolveSheetUrl(rawSheet);
+        finalSheetId = extractSpreadsheetId(rawSheet);
+      }
+
+      let finalCsvUrl = '';
+      if (rawCsv) {
+        finalCsvUrl = resolveCsvUrl(rawCsv);
+      }
+
+      const updatedSettings: AppSettings = {
+        ...settings,
+        sheetUrl: finalSheetUrl,
+        sheetId: finalSheetId,
+        studentCsvUrl: finalCsvUrl
+      };
+
+      await firestoreService.saveSettings(updatedSettings);
+      setSettings(updatedSettings);
+      setStudentCsvUrl(finalCsvUrl);
+      showNotification('Link dan ID berhasil disimpan ke Firebase!', 'success');
+    } catch (e: any) {
+      showNotification(`Gagal menyimpan: ${e?.message || e}`, 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   // --- Handlers: Pull Student Data From CSV ---
   const handlePullStudentsFromCsv = async () => {
     if (!studentCsvUrl || !studentCsvUrl.trim().startsWith('http')) {
@@ -1496,7 +1538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     {
       category: 'Integrasi & Sistem',
       items: [
-        { id: 'spreadsheet' as const, label: 'Login Siswa (Spreadsheet CSV)', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
+        { id: 'spreadsheet' as const, label: 'Login', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
         { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' }
       ]
     }
@@ -1664,54 +1706,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {settings.schoolName || 'Modul Pembelajaran Digital'}
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center flex-wrap gap-2">
-          {/* Cloud Sync Button */}
-          <button
-            onClick={handleSyncAllModulesAndQuizzesToCloud}
-            disabled={isCloudSyncing}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            title="Unggah dan sinkronkan semua materi modul & bank kuis ke Cloud Firebase agar muncul di link share"
-          >
-            <Cloud size={14} className={isCloudSyncing ? "animate-spin" : ""} />
-            <span className="hidden sm:inline">{isCloudSyncing ? 'Menyinkronkan...' : 'Sinkronkan ke Cloud'}</span>
-          </button>
-
-          {/* Student View Toggle */}
-          <button
-            onClick={() => onBackToStudentView()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer shadow-xs"
-            title="Lihat tampilan aplikasi sebagaimana dilihat oleh siswa"
-          >
-            <Eye size={14} />
-            <span className="hidden sm:inline">Lihat Tampilan Siswa</span>
-          </button>
-
-          {/* Logout */}
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all"
-          >
-            <LogOut size={14} />
-            <span>Keluar</span>
-          </button>
-        </div>
-
-        {/* Quick Menu Switcher on Mobile Header */}
-        <div className="md:hidden w-full pt-1.5 flex items-center justify-between gap-2 border-t border-slate-100">
-          <button
-            onClick={() => setIsMobileSidebarOpen(true)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 transition-colors shadow-xs"
-          >
-            <div className="flex items-center gap-2 truncate">
-              <PanelLeft size={16} className="text-emerald-700 shrink-0" />
-              <span className="truncate">Menu: <strong className="text-emerald-950 font-black">{getActiveTabTitle()}</strong></span>
-            </div>
-            <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-lg font-bold shrink-0 flex items-center gap-1">
-              Ganti Menu <ChevronRight size={12} />
-            </span>
-          </button>
         </div>
       </header>
 
@@ -3042,126 +3036,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ========================================================================= */}
-              {/* TAB 7: LOGIN SISWA (SPREADSHEET CSV) CONFIGURATION                       */}
+              {/* TAB 7: LOGIN                                                             */}
               {/* ========================================================================= */}
               {activeTab === 'spreadsheet' && (
-                <div className="space-y-6 max-w-4xl bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-                  {/* Header */}
-                  <div className="pb-4 border-b border-slate-200">
-                    <h2 className="text-xl font-bold text-slate-950 flex items-center gap-2">
-                      <FileSpreadsheet className="text-purple-600" size={24} />
-                      Konfigurasi Login Siswa (Spreadsheet CSV)
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Atur link Google Spreadsheet yang telah dipublikasikan sebagai CSV di sini. Data ini akan langsung digunakan secara real-time oleh halaman login siswa.
-                    </p>
-                  </div>
-
-                  {/* Input Form */}
-                  <div className="space-y-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4 max-w-4xl">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        Link Google Spreadsheet (Diterbitkan sebagai CSV)
+                        Link / ID Spreadsheet
                       </label>
                       <input
                         type="text"
-                        placeholder="Contoh: https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
-                        value={settings.studentCsvUrl || ''}
-                        onChange={e => setSettings({ ...settings, studentCsvUrl: e.target.value })}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-hidden font-mono"
+                        placeholder="Link atau ID Spreadsheet"
+                        value={spreadsheetInput}
+                        onChange={e => setSpreadsheetInput(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900"
                       />
-                      <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                        Langkah mendapatkan link CSV: Di Google Sheets Anda, klik <strong>File &gt; Share &gt; Publish to web</strong>. Pilih tab siswa Anda (atau seluruh dokumen), pilih format <strong>Comma-separated values (.csv)</strong>, kemudian klik Publish dan salin linknya ke sini.
-                      </p>
                     </div>
 
-                    {/* Test Connection & Save Controls */}
-                    <div className="flex flex-wrap gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!settings.studentCsvUrl || !settings.studentCsvUrl.trim().startsWith('http')) {
-                            showNotification('Harap masukkan URL CSV Google Spreadsheet terlebih dahulu!', 'error');
-                            return;
-                          }
-                          setIsTestingSheetConnection(true);
-                          try {
-                            const res = await sheetService.pullStudentsFromCsv(settings.studentCsvUrl);
-                            if (res.success && res.classes && res.students) {
-                              showNotification(`Koneksi Sukses! Berhasil mendeteksi ${res.classes.length} Kelas dan ${res.students.length} Siswa secara lokal.`, 'success');
-                              setClasses(res.classes);
-                              setStudents(res.students);
-                            } else {
-                              showNotification(`Koneksi Gagal: ${res.message || "Pastikan link di-publish sebagai CSV."}`, 'error');
-                            }
-                          } catch (e: any) {
-                            showNotification(`Error saat menarik data: ${e?.message || e}`, 'error');
-                          } finally {
-                            setIsTestingSheetConnection(false);
-                          }
-                        }}
-                        disabled={isTestingSheetConnection || !settings.studentCsvUrl}
-                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
-                      >
-                        {isTestingSheetConnection ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Menguji & Menarik Data...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw size={14} />
-                            <span>Uji & Tarik Data Siswa ke Lokal</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setIsSavingSettings(true);
-                          try {
-                            await firestoreService.saveSettings(settings);
-                            showNotification('Link CSV berhasil disimpan ke cloud Firebase!', 'success');
-                          } catch (e: any) {
-                            showNotification(`Gagal menyimpan: ${e?.message || e}`, 'error');
-                          } finally {
-                            setIsSavingSettings(false);
-                          }
-                        }}
-                        disabled={isSavingSettings}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
-                      >
-                        {isSavingSettings ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Menyimpan ke Firebase...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Save size={14} />
-                            <span>Simpan Link CSV ke Firebase</span>
-                          </>
-                        )}
-                      </button>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        Link / ID CSV
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Link atau ID CSV"
+                        value={csvInput}
+                        onChange={e => setCsvInput(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900"
+                      />
                     </div>
+                  </div>
 
-                    {/* Quick Preview of parsed data (if loaded) */}
-                    {classes.length > 0 && (
-                      <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                        <h4 className="text-xs font-bold text-slate-800">Preview Kelas Terdeteksi:</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {classes.map(c => (
-                            <span key={c.id} className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold">
-                              Kelas {c.name || c.id}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          Data ini ditarik langsung ke lokal browser Anda untuk pengujian saja. Seluruh database Firestore tetap bersih karena data diunduh real-time oleh siswa saat login.
-                        </p>
-                      </div>
-                    )}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleSaveSpreadsheetConfig}
+                      disabled={isSavingSettings}
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
+                    >
+                      {isSavingSettings ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Menyimpan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={14} />
+                          <span>Simpan</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               )}

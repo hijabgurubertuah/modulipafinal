@@ -959,6 +959,11 @@ export const firestoreService = {
   },
 
   // --- APP SETTINGS (Instant SWR Cache) ---
+  getSettingsSync: (): AppSettings => {
+    const cached = getSafeCached<AppSettings>('settings');
+    return cached || DEFAULT_SETTINGS;
+  },
+
   getSettings: async (): Promise<AppSettings> => {
     const cached = getSafeCached<AppSettings>('settings');
     if (cached) {

@@ -14,7 +14,7 @@ import { GardenDecorations } from './GardenDecorations';
 import { AppSettings, StudentItem, ClassItem } from '../types';
 import { firestoreService } from '../services/firestoreService';
 import { sheetService } from '../services/sheetService';
-import { getDirectCsvUrl } from '../config/spreadsheetConfig';
+import { getDirectCsvUrl, resolveCsvUrl } from '../config/spreadsheetConfig';
 
 interface LoginProps {
   username: string;
@@ -82,24 +82,31 @@ export const Login: React.FC<LoginProps> = ({
       }
       setErrorMsg(null);
 
-      // 1. Cek konfigurasi langsung terlebih dahulu, lalu remote Firestore
-      const directUrl = getDirectCsvUrl();
+      // 1. Selalu utamakan ID atau Link CSV terbaru yang ada di Firebase
+      const cachedSettings = firestoreService.getSettingsSync();
+      const firebaseCsvRaw = settings?.studentCsvUrl || cachedSettings?.studentCsvUrl;
+      const firebaseCsvUrl = firebaseCsvRaw ? resolveCsvUrl(firebaseCsvRaw) : '';
+      const csvUrl = firebaseCsvUrl || getDirectCsvUrl();
 
-      let freshSettings = null;
-      try {
-        freshSettings = await firestoreService.fetchRemoteSettings();
-      } catch (e) {
-        console.warn("Direct remote settings fetch note:", e);
+      // 2. Jika sudah ada data di lokal browser dan bukan forceSync manual, langsung gunakan lokal (0ms)
+      if (!forceSync && classes.length > 0 && students.length > 0) {
+        setLoading(false);
+        // Pembaruan background tanpa memblokir UI
+        if (csvUrl && csvUrl.trim().startsWith('http')) {
+          sheetService.pullStudentsFromCsv(csvUrl).then((res) => {
+            if (res.success && res.classes && res.students && res.classes.length > 0) {
+              setClasses(res.classes);
+              setStudents(res.students);
+              firestoreService.replaceAllClasses(res.classes);
+              firestoreService.replaceAllStudents(res.students);
+            }
+          }).catch(() => {});
+        }
+        return;
       }
-      
-      if (!freshSettings) {
-        freshSettings = await firestoreService.getSettings();
-      }
-      
-      const csvUrl = directUrl || freshSettings?.studentCsvUrl || settings?.studentCsvUrl;
 
       if (csvUrl && csvUrl.trim().startsWith('http')) {
-        // Hapus data lama terlebih dahulu jika tombol Segarkan ditekan secara manual
+        // Hapus data lama terlebih dahulu hanya jika tombol Segarkan ditekan secara manual
         if (forceSync) {
           setClasses([]);
           setStudents([]);
@@ -261,13 +268,33 @@ export const Login: React.FC<LoginProps> = ({
                       <User size={13} className="text-purple-300" />
                       Nama Siswa:
                     </span>
+                    {userClass && userClass !== 'TAMU' && filteredStudents.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInputMode(inputMode === 'select' ? 'manual' : 'select')}
+                        className="text-[10px] text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer font-bold select-none opacity-80 hover:opacity-100"
+                        title={inputMode === 'select' ? "Ketik manual" : "Pilih dari daftar"}
+                      >
+                        {inputMode === 'select' ? (
+                          <>
+                            <Edit2 size={10} />
+                            <span>Ketik Manual</span>
+                          </>
+                        ) : (
+                          <>
+                            <List size={10} />
+                            <span>Pilih Daftar</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </label>
 
                   <div className="relative">
                     {/* Never show 'gurusmp' by default - it is secret */}
                     {(() => {
                       const displayUsername = username.toLowerCase() === 'gurusmp' ? '' : username;
-                      return userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
+                      return inputMode === 'select' && userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
                         // Dropdown Mode for easier student selection
                         <div className="relative">
                           <select
@@ -289,13 +316,13 @@ export const Login: React.FC<LoginProps> = ({
                           </div>
                         </div>
                       ) : (
-                        // Manual Input Mode when no student list or for TAMU
+                        // Manual Input Mode when no student list, for TAMU, or manual toggle
                         <input 
                           id="login-name-input"
                           type="text" 
                           value={displayUsername}
                           onChange={(e) => setUsername(e.target.value)}
-                          placeholder=""
+                          placeholder={userClass ? "Ketik nama lengkap..." : "Pilih kelas terlebih dahulu"}
                           className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
                           autoComplete="off"
                           disabled={!userClass}

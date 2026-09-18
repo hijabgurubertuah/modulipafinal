@@ -68,7 +68,6 @@ try {
   const firestoreSettings = {
     localCache: cacheConfig,
     experimentalAutoDetectLongPolling: true,
-    experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true
   };
 

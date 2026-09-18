@@ -28,20 +28,12 @@ export const SPREADSHEET_CONFIG = {
 };
 
 /**
- * Helper untuk mendapatkan URL CSV yang valid dari konfigurasi di atas
+ * Helper untuk mengubah ID atau link apa pun menjadi URL CSV Google Spreadsheet yang valid
  */
-export function getDirectCsvUrl(): string {
-  const val = (SPREADSHEET_CONFIG.studentCsvOrSheetId || '').trim();
-  if (!val) {
-    if (SPREADSHEET_CONFIG.publishId) {
-      return `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_CONFIG.publishId}/pub?output=csv`;
-    }
-    if (SPREADSHEET_CONFIG.spreadsheetId) {
-      return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_CONFIG.spreadsheetId}/export?format=csv`;
-    }
-    return '';
-  }
-  
+export function resolveCsvUrl(input?: string): string {
+  const val = (input || '').trim();
+  if (!val) return '';
+
   // Jika sudah berupa URL lengkap
   if (val.startsWith('http://') || val.startsWith('https://')) {
     if (val.includes('docs.google.com/spreadsheets') && !val.includes('export?format=csv') && !val.includes('output=csv')) {
@@ -52,7 +44,7 @@ export function getDirectCsvUrl(): string {
     }
     return val;
   }
-  
+
   // Jika berupa Publish to Web ID (diawali 2PACX-)
   if (val.startsWith('2PACX-')) {
     return `https://docs.google.com/spreadsheets/d/e/${val}/pub?output=csv`;
@@ -61,3 +53,46 @@ export function getDirectCsvUrl(): string {
   // Jika berupa Spreadsheet ID biasa (misal: 15u_RpWr...)
   return `https://docs.google.com/spreadsheets/d/${val}/export?format=csv`;
 }
+
+/**
+ * Helper untuk mengubah ID atau link apa pun menjadi URL Sheet Spreadsheet standar
+ */
+export function resolveSheetUrl(input?: string): string {
+  const val = (input || '').trim();
+  if (!val) return '';
+  if (val.startsWith('http://') || val.startsWith('https://')) {
+    return val;
+  }
+  return `https://docs.google.com/spreadsheets/d/${val}/edit`;
+}
+
+/**
+ * Helper untuk mengekstrak Spreadsheet ID murni
+ */
+export function extractSpreadsheetId(input?: string): string {
+  const val = (input || '').trim();
+  if (!val) return '';
+  if (val.startsWith('http://') || val.startsWith('https://')) {
+    const idMatch = val.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (idMatch && idMatch[1]) return idMatch[1];
+  }
+  return val;
+}
+
+/**
+ * Helper untuk mendapatkan URL CSV yang valid dari konfigurasi di atas
+ */
+export function getDirectCsvUrl(): string {
+  const val = (SPREADSHEET_CONFIG.studentCsvOrSheetId || '').trim();
+  if (!val) {
+    if (SPREADSHEET_CONFIG.publishId) {
+      return resolveCsvUrl(SPREADSHEET_CONFIG.publishId);
+    }
+    if (SPREADSHEET_CONFIG.spreadsheetId) {
+      return resolveCsvUrl(SPREADSHEET_CONFIG.spreadsheetId);
+    }
+    return '';
+  }
+  return resolveCsvUrl(val);
+}
+
