@@ -1040,21 +1040,6 @@ export const firestoreService = {
   getSettings: async (): Promise<AppSettings> => {
     const cached = getSafeCached<AppSettings>('settings');
     if (cached) {
-      // Auto-migrate standard URLs or fill empty studentCsvUrl
-      let updated = false;
-      if (cached.googleAppsScriptUrl && cached.googleAppsScriptUrl.includes('AKfycbzLsyFBV2ntaJiXODGepHSTCfubPWmRdIO27iuXwbgVEA3Cs1vMw5c0F1KuOcd_A2NEsw')) {
-        cached.googleAppsScriptUrl = DEFAULT_SETTINGS.googleAppsScriptUrl;
-        cached.sheetUrl = DEFAULT_SETTINGS.sheetUrl;
-        cached.sheetId = DEFAULT_SETTINGS.sheetId;
-        updated = true;
-      }
-      if (!cached.studentCsvUrl || !cached.studentCsvUrl.trim().startsWith('http')) {
-        cached.studentCsvUrl = DEFAULT_SETTINGS.studentCsvUrl;
-        updated = true;
-      }
-      if (updated) {
-        setSafeCached('settings', cached);
-      }
       setTimeout(() => {
         firestoreService.fetchRemoteSettings().catch(() => {});
       }, 50);
@@ -1071,23 +1056,9 @@ export const firestoreService = {
 
   fetchRemoteSettings: async (): Promise<AppSettings | null> => {
     const docRef = doc(db, 'settings', 'general');
-    const snap = await withTimeout(getDoc(docRef), 4000);
+    const snap = await withTimeout(getDoc(docRef), 10000);
     if (snap.exists()) {
       const settings = snap.data() as AppSettings;
-      let updated = false;
-      if (settings.googleAppsScriptUrl && settings.googleAppsScriptUrl.includes('AKfycbzLsyFBV2ntaJiXODGepHSTCfubPWmRdIO27iuXwbgVEA3Cs1vMw5c0F1KuOcd_A2NEsw')) {
-        settings.googleAppsScriptUrl = DEFAULT_SETTINGS.googleAppsScriptUrl;
-        settings.sheetUrl = DEFAULT_SETTINGS.sheetUrl;
-        settings.sheetId = DEFAULT_SETTINGS.sheetId;
-        updated = true;
-      }
-      if (!settings.studentCsvUrl || !settings.studentCsvUrl.trim().startsWith('http')) {
-        settings.studentCsvUrl = DEFAULT_SETTINGS.studentCsvUrl;
-        updated = true;
-      }
-      if (updated) {
-        firestoreService.saveSettings(settings).catch(() => {});
-      }
       setSafeCached('settings', settings);
       return settings;
     }
@@ -1101,13 +1072,9 @@ export const firestoreService = {
     // 2. Clean payload to avoid undefined fields
     const cleanSettings = JSON.parse(JSON.stringify(settings));
 
-    // 3. Save to Firestore with resilient background sync
-    try {
-      const docRef = doc(db, 'settings', 'general');
-      await withTimeout(setDoc(docRef, cleanSettings, { merge: true }), 10000);
-    } catch (e) {
-      console.warn('Firestore saveSettings background sync note:', e);
-    }
+    // 3. Save to Firestore (replaces old document fields with new values)
+    const docRef = doc(db, 'settings', 'general');
+    await withTimeout(setDoc(docRef, cleanSettings, { merge: true }), 12000);
   },
 
   // --- SYNC ALL CURRENT APP DATA TO CLOUD (PARALLEL & RESILIENT) ---

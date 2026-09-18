@@ -919,7 +919,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   googleAppsScriptUrl: 'https://script.google.com/macros/s/AKfycbwcdea5JWF2NxbfzVdH9Namnxdf_mlTe6ry7wHoVolRscTsXbKDypQbJCGndPvHB0Sd/exec',
   sheetId: '1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU',
   sheetUrl: 'https://docs.google.com/spreadsheets/d/1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU/edit',
-  studentCsvUrl: 'https://docs.google.com/spreadsheets/d/1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU/export?format=csv',
+  studentCsvUrl: '',
   adminPassword: 'gurusmp',
   schoolName: 'SMPN 1 Bengkalis',
   appTitle: 'Modul Belajar Berkebun IPA SMP',
