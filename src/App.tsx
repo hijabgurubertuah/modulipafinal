@@ -66,6 +66,7 @@ const App = () => {
   const [modules, setModules] = useState<AppModule[]>(() => getDefaultModules());
   const [isTeacherMode, setIsTeacherMode] = useState<boolean>(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -180,6 +181,15 @@ const App = () => {
   }, [theme]);
 
   useEffect(() => {
+    if (welcomeToast) {
+      const timer = setTimeout(() => {
+        setWelcomeToast(null);
+      }, 5500);
+      return () => clearTimeout(timer);
+    }
+  }, [welcomeToast]);
+
+  useEffect(() => {
     localStorage.setItem('ipa_current_view', currentView);
   }, [currentView]);
 
@@ -241,6 +251,7 @@ const App = () => {
       setIsLoggedIn(true);
       setProgress(prev => ({ ...prev, username: 'GURUSMP' }));
       setCurrentView('home');
+      setWelcomeToast('Selamat datang! Anda masuk sebagai guru, selamat mendampingi siswa belajar...');
       return;
     }
 
@@ -256,6 +267,7 @@ const App = () => {
       localStorage.setItem('ipa_user', 'TAMU');
       localStorage.setItem('ipa_user_class', 'TAMU');
       localStorage.setItem('ipa_is_logged_in', 'true');
+      setWelcomeToast('Selamat datang! Anda masuk sebagai tamu, selamat belajar...');
       return;
     }
 
@@ -282,6 +294,7 @@ const App = () => {
       setIsLoggedIn(true);
       setProgress(prev => ({ ...prev, username: currentUsername }));
       setCurrentView('home');
+      setWelcomeToast(`Selamat datang, ${currentUsername}! Selamat belajar...`);
       
       // Save for next time
       localStorage.setItem('ipa_user', currentUsername);
@@ -813,6 +826,36 @@ const App = () => {
               <Icons.School size={16} className="text-white/60 group-hover:text-white/90 transition-colors" />
             )}
           </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Beautiful Spring-Animated Welcome Toast */}
+      <AnimatePresence>
+        {welcomeToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, scale: 0.95, x: '-50%' }}
+            transition={{ type: 'spring', damping: 15 }}
+            style={{ left: '50%' }}
+            className="fixed top-6 z-[100] w-[90%] max-w-sm md:max-w-md px-4"
+          >
+            <div className="bg-emerald-950/95 border-2 border-emerald-400/50 backdrop-blur-md p-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-3.5 text-left">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                <Icons.Sparkles size={20} className="animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-emerald-300 text-[10px] font-black uppercase tracking-widest">Notifikasi</h4>
+                <p className="text-white text-xs md:text-sm font-bold leading-relaxed">{welcomeToast}</p>
+              </div>
+              <button
+                onClick={() => setWelcomeToast(null)}
+                className="text-emerald-400 hover:text-white transition-colors p-1"
+              >
+                <Icons.X size={16} />
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

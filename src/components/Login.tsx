@@ -10,7 +10,8 @@ import {
   KeyRound, 
   X, 
   ShieldCheck,
-  School
+  School,
+  RefreshCw
 } from 'lucide-react';
 import { GardenDecorations } from './GardenDecorations';
 import { firestoreService } from '../services/firestoreService';
@@ -48,6 +49,11 @@ export const Login: React.FC<LoginProps> = ({
   const [authError, setAuthError] = useState<string>('');
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   
+  // Quick caching and remember login states
+  const [isRefreshingCsv, setIsRefreshingCsv] = useState<boolean>(false);
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [syncFeedback, setSyncFeedback] = useState<string>('');
+
   // Searchable student dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>(username || '');
@@ -86,70 +92,97 @@ export const Login: React.FC<LoginProps> = ({
     } catch {}
   }, []);
 
-  // Fetch live classes and students
-  const loadClassesAndStudents = async () => {
-    setIsLoadingData(true);
+  // Auto load remembered login on mount
+  useEffect(() => {
     try {
-      const [cachedClasses, cachedStudents] = await Promise.all([
-        firestoreService.getClasses(),
-        firestoreService.getStudents()
-      ]);
-
-      const activeClasses = (cachedClasses || []).filter(c => c.isActive !== false);
-      const activeStudents = (cachedStudents || []).filter(s => s.status !== 'Non-Aktif');
-
-      if (activeClasses.length > 0) {
-        setClassesList(activeClasses);
+      const savedUser = localStorage.getItem('garden_saved_username');
+      const savedClass = localStorage.getItem('garden_saved_userclass');
+      if (savedUser && savedClass) {
+        setUsername(savedUser);
+        setSearchTerm(savedUser);
+        setUserClass(savedClass);
       }
-      if (activeStudents.length > 0) {
-        setAllStudents(activeStudents);
+    } catch {}
+  }, []);
+
+  // Fetch live classes and students
+  const loadClassesAndStudents = async (forceRefresh = false) => {
+    setIsLoadingData(true);
+    setSyncFeedback('');
+
+    // 1. Instantly load from local storage cache on device for zero load latency
+    try {
+      const cachedClsStr = localStorage.getItem('garden_local_classes');
+      const cachedStdStr = localStorage.getItem('garden_local_students');
+      if (cachedClsStr && cachedStdStr) {
+        const cls = JSON.parse(cachedClsStr);
+        const std = JSON.parse(cachedStdStr);
+        if (cls.length > 0) setClassesList(cls);
+        if (std.length > 0) setAllStudents(std);
+        if (!forceRefresh) {
+          setIsLoadingData(false);
+        }
       }
-    } catch (err) {
-      console.warn('Initial cache load notice:', err);
+    } catch (e) {
+      console.warn('Error reading local cache:', e);
     }
 
-    // Background sync from CSV or Google Sheet if connected
     try {
+      // 2. Fetch latest settings from Firestore
       const activeSettings = await firestoreService.getSettings();
+      if (activeSettings) {
+        setCurrentSettings(activeSettings);
+      }
+
+      // 3. Load strictly from CSV spreadsheet URL if configured, bypassing standard Firestore student list
       if (activeSettings && activeSettings.studentCsvUrl) {
+        if (forceRefresh) {
+          setIsRefreshingCsv(true);
+        }
         const csvRes = await sheetService.pullStudentsFromCsv(activeSettings.studentCsvUrl);
         if (csvRes.success && csvRes.students && csvRes.classes) {
-          const validClasses = (csvRes.classes || []).filter(c => c.isActive !== false);
-          const validStudents = (csvRes.students || []).filter(s => s.status !== 'Non-Aktif');
+          const validClasses = csvRes.classes.filter(c => c.isActive !== false);
+          const validStudents = csvRes.students.filter(s => s.status !== 'Non-Aktif');
 
-          if (validClasses.length > 0) {
-            setClassesList(validClasses);
-            await firestoreService.replaceAllClasses(validClasses);
+          setClassesList(validClasses);
+          setAllStudents(validStudents);
+
+          // Save to local device storage for offline and instant instant loads
+          localStorage.setItem('garden_local_classes', JSON.stringify(validClasses));
+          localStorage.setItem('garden_local_students', JSON.stringify(validStudents));
+          
+          if (forceRefresh) {
+            setSyncFeedback('Berhasil memperbarui daftar nama siswa dari Spreadsheet!');
+            setTimeout(() => setSyncFeedback(''), 4500);
           }
-          if (validStudents.length > 0) {
-            setAllStudents(validStudents);
-            await firestoreService.replaceAllStudents(validStudents);
-          }
+        } else if (forceRefresh) {
+          setSyncFeedback(`Gagal memperbarui: ${csvRes.message}`);
+          setTimeout(() => setSyncFeedback(''), 4500);
         }
       } else {
-        const sheetRes = await sheetService.fetchDataFromSheet();
-        if (sheetRes.success && ((sheetRes.classes && sheetRes.classes.length > 0) || (sheetRes.students && sheetRes.students.length > 0))) {
-          const validClasses = (sheetRes.classes || []).filter(c => c.isActive !== false);
-          const validStudents = (sheetRes.students || []).filter(s => s.status !== 'Non-Aktif');
-          
-          if (validClasses.length > 0) {
-            setClassesList(validClasses);
-            for (const cls of validClasses) {
-              firestoreService.saveClass(cls).catch(() => {});
-            }
-          }
-          if (validStudents.length > 0) {
-            setAllStudents(validStudents);
-            for (const std of validStudents) {
-              firestoreService.saveStudent(std).catch(() => {});
-            }
-          }
+        // Fallback to normal Firebase loading if no CSV URL is configured
+        const [cachedClasses, cachedStudents] = await Promise.all([
+          firestoreService.getClasses(),
+          firestoreService.getStudents()
+        ]);
+
+        const activeClasses = (cachedClasses || []).filter(c => c.isActive !== false);
+        const activeStudents = (cachedStudents || []).filter(s => s.status !== 'Non-Aktif');
+
+        if (activeClasses.length > 0) {
+          setClassesList(activeClasses);
+          localStorage.setItem('garden_local_classes', JSON.stringify(activeClasses));
+        }
+        if (activeStudents.length > 0) {
+          setAllStudents(activeStudents);
+          localStorage.setItem('garden_local_students', JSON.stringify(activeStudents));
         }
       }
-    } catch (sheetErr) {
-      console.warn('Background Google Sheet / CSV sync notice:', sheetErr);
+    } catch (err) {
+      console.warn('Background sync error:', err);
     } finally {
       setIsLoadingData(false);
+      setIsRefreshingCsv(false);
     }
   };
 
@@ -195,17 +228,16 @@ export const Login: React.FC<LoginProps> = ({
 
   // Search filtered student suggestions based on user typing
   const filteredStudentSuggestions = useMemo(() => {
+    // If no class is selected (empty):
+    if (!userClass) {
+      // Only show TAMU option. "ada dropdown pilihannya yaitu TAMU"
+      return [TAMU_STUDENT];
+    }
+
     const query = searchTerm.trim().toLowerCase();
 
-    // Base candidates:
-    // If a class is selected (e.g. 7A, 8A, 9A), TAMU is removed and strictly shows that class's students
-    let baseList: StudentItem[] = [];
-    if (userClass && userClass !== 'guru' && userClass.toUpperCase() !== 'TAMU') {
-      baseList = [...classStudents];
-    } else {
-      // No class selected or TAMU selected: show TAMU first, followed by all students
-      baseList = [TAMU_STUDENT, ...allStudents.filter(s => s.name.toUpperCase() !== 'TAMU')];
-    }
+    // If a class is selected, show strictly that class's students (NO "TAMU" option shown)
+    const baseList = [...classStudents];
 
     if (!query) {
       return baseList;
@@ -216,32 +248,18 @@ export const Login: React.FC<LoginProps> = ({
       (s.nisn && s.nisn.toLowerCase().includes(query)) ||
       (s.userClass && s.userClass.toLowerCase().includes(query))
     );
-  }, [classStudents, allStudents, userClass, searchTerm, TAMU_STUDENT]);
+  }, [classStudents, userClass, searchTerm, TAMU_STUDENT]);
 
   const handleClassChange = (selectedCls: string) => {
     setAuthError('');
     setUserClass(selectedCls);
-    // When a specific class is selected, clear TAMU or any student from a different class
-    if (username) {
-      if (username.trim().toUpperCase() === 'TAMU' || username.trim().toLowerCase() === 'gurusmp') {
-        setUsername('');
-        setSearchTerm('');
-      } else {
-        const existsInNewClass = allStudents.some(
-          s => s.userClass?.trim().toUpperCase() === selectedCls.trim().toUpperCase() &&
-               s.name.trim().toUpperCase() === username.trim().toUpperCase()
-        );
-        if (!existsInNewClass) {
-          setUsername('');
-          setSearchTerm('');
-        }
-      }
-    }
-    // Auto open student dropdown once class is selected to guide the user
-    setTimeout(() => {
-      setIsDropdownOpen(true);
-      if (inputRef.current) inputRef.current.focus();
-    }, 100);
+    
+    // "Jika kelas tidak dipilih kolom nama otomatis kosong"
+    setUsername('');
+    setSearchTerm('');
+
+    // "tidak otomatis keluar, hanya jika kolom nama di tekan"
+    setIsDropdownOpen(false);
   };
 
   const handleInputChange = (val: string) => {
@@ -286,21 +304,31 @@ export const Login: React.FC<LoginProps> = ({
       setUserClass('guru');
       setUsername('GURUSMP');
       sheetService.recordLogin('GURUSMP', 'guru');
+      if (rememberMe) {
+        localStorage.setItem('garden_saved_username', 'GURUSMP');
+        localStorage.setItem('garden_saved_userclass', 'guru');
+      } else {
+        localStorage.removeItem('garden_saved_username');
+        localStorage.removeItem('garden_saved_userclass');
+      }
       onLogin(e);
       return;
     }
 
-    // 2. TAMU Guest User Bypass (Requires no class selection, allows immediate access to materials)
-    if (cleanUser.toUpperCase() === 'TAMU' || cleanCls.toUpperCase() === 'TAMU') {
+    // 2. TAMU Guest User Bypass or Empty Class selection (No class selected means guest TAMU is active)
+    if (!cleanCls || cleanUser.toUpperCase() === 'TAMU' || cleanCls.toUpperCase() === 'TAMU') {
+      const resolvedName = cleanUser || 'TAMU';
       setUserClass('TAMU');
-      setUsername('TAMU');
-      sheetService.recordLogin('TAMU', 'TAMU');
+      setUsername(resolvedName);
+      sheetService.recordLogin(resolvedName, 'TAMU');
+      if (rememberMe) {
+        localStorage.setItem('garden_saved_username', resolvedName);
+        localStorage.setItem('garden_saved_userclass', 'TAMU');
+      } else {
+        localStorage.removeItem('garden_saved_username');
+        localStorage.removeItem('garden_saved_userclass');
+      }
       onLogin(e);
-      return;
-    }
-
-    if (!cleanCls) {
-      setAuthError('Silakan pilih Kelas Anda terlebih dahulu (atau pilih akun TAMU).');
       return;
     }
 
@@ -342,6 +370,15 @@ export const Login: React.FC<LoginProps> = ({
     
     // Record login activity in background
     sheetService.recordLogin(resolvedStudentName, cleanCls);
+
+    // Save login details to local storage if rememberMe is checked
+    if (rememberMe) {
+      localStorage.setItem('garden_saved_username', resolvedStudentName);
+      localStorage.setItem('garden_saved_userclass', cleanCls);
+    } else {
+      localStorage.removeItem('garden_saved_username');
+      localStorage.removeItem('garden_saved_userclass');
+    }
 
     // Proceed to app
     onLogin(e);
@@ -444,11 +481,6 @@ export const Login: React.FC<LoginProps> = ({
                     <School size={13} className="text-purple-300" />
                     Pilih Kelas Anda:
                   </span>
-                  {userClass && (
-                    <span className="text-emerald-300 font-extrabold text-[10px] bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                      {classStudents.length} Siswa Terdaftar
-                    </span>
-                  )}
                 </label>
                 <div className="relative">
                   <select
@@ -461,10 +493,9 @@ export const Login: React.FC<LoginProps> = ({
                       {isLoadingData ? 'Memuat Daftar Kelas...' : '-- PILIH KELAS --'}
                     </option>
                     {classesList.map((c, idx) => {
-                      const count = allStudents.filter(s => (s.userClass || '').toUpperCase() === (c.name || c.id).toUpperCase()).length;
                       return (
                         <option key={`cls-${c.id || c.name}-${idx}`} value={c.name}>
-                          Kelas {c.name} {count > 0 ? `(${count} Siswa)` : ''}
+                          Kelas {c.name}
                         </option>
                       );
                     })}
@@ -493,9 +524,10 @@ export const Login: React.FC<LoginProps> = ({
                     onChange={(e) => handleInputChange(e.target.value)}
                     onFocus={() => setIsDropdownOpen(true)}
                     onClick={() => setIsDropdownOpen(true)}
-                    placeholder={userClass && userClass !== 'TAMU' ? `Ketik / pilih nama Anda...` : `Pilih 'TAMU' atau ketik nama...`}
-                    className="w-full pl-5 pr-12 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
+                    placeholder={userClass && userClass !== 'TAMU' ? `Pilih nama Anda...` : `Pilih 'TAMU' atau ketik nama...`}
+                    className={`w-full pl-5 pr-12 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400 ${userClass ? 'cursor-pointer select-none' : ''}`}
                     autoComplete="off"
+                    readOnly={!!userClass}
                   />
 
                   {/* Clear / Status Action Icons */}
@@ -528,13 +560,13 @@ export const Login: React.FC<LoginProps> = ({
                 <AnimatePresence>
                   {isDropdownOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
                       transition={{ duration: 0.12 }}
-                      className="absolute z-50 left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl border-2 border-purple-300 overflow-hidden max-h-60 flex flex-col text-slate-800"
+                      className="absolute z-50 left-0 right-0 bottom-full mb-2 bg-white rounded-2xl shadow-2xl border-2 border-purple-300 overflow-hidden max-h-60 flex flex-col text-slate-800"
                     >
-                      {/* Dropdown Student List */}
+                      {/* Dropup Student List */}
                       <div className="overflow-y-auto divide-y divide-slate-100 flex-1 p-1">
                         {filteredStudentSuggestions.length === 0 ? (
                           <div className="p-4 text-center text-slate-400 text-xs font-semibold">
@@ -566,13 +598,6 @@ export const Login: React.FC<LoginProps> = ({
                                 }`}
                               >
                                 <div className="flex items-center gap-2 truncate">
-                                  {isTamu ? (
-                                    <span className="px-1.5 py-0.5 bg-amber-400 text-amber-950 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0">
-                                      UMUM
-                                    </span>
-                                  ) : (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
-                                  )}
                                   <div className="flex flex-col truncate">
                                     <span className={`text-sm truncate ${isTamu ? 'font-black text-amber-950' : ''}`}>
                                       {renderHighlightedName(student.name, searchTerm)}
@@ -603,6 +628,41 @@ export const Login: React.FC<LoginProps> = ({
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* Remember Me Checkbox & Sync Button Container */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 mt-1 text-[11px] font-bold text-purple-200">
+                {/* Checkbox */}
+                <label className="flex items-center gap-2 cursor-pointer select-none hover:text-white transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 bg-black/25 cursor-pointer"
+                  />
+                  <span>Simpan login di perangkat ini</span>
+                </label>
+
+                {/* Refresh Student Names Button */}
+                {currentSettings.studentCsvUrl && (
+                  <button
+                    type="button"
+                    onClick={() => loadClassesAndStudents(true)}
+                    disabled={isRefreshingCsv}
+                    className="flex items-center gap-1 hover:text-emerald-300 disabled:opacity-50 transition-all cursor-pointer bg-purple-950/40 hover:bg-purple-950/70 border border-purple-400/20 px-2.5 py-1 rounded-full text-[10px]"
+                    title="Ambil pembaruan daftar nama siswa terbaru dari Spreadsheet"
+                  >
+                    <RefreshCw size={11} className={isRefreshingCsv ? 'animate-spin' : ''} />
+                    <span>{isRefreshingCsv ? 'Memperbarui...' : 'Perbarui Nama'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Sync Feedback Message */}
+              {syncFeedback && (
+                <div className={`text-[11px] font-semibold text-center mt-1 py-1 px-3 rounded-lg ${syncFeedback.includes('Gagal') ? 'bg-rose-950/50 text-rose-300 animate-pulse' : 'bg-emerald-950/50 text-emerald-300'}`}>
+                  {syncFeedback}
+                </div>
+              )}
 
               {/* Submit Button */}
               <button 

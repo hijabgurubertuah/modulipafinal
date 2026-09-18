@@ -212,6 +212,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // --- Student CSV Import State ---
   const [studentCsvUrl, setStudentCsvUrl] = useState<string>('');
   const [isPullingCsv, setIsPullingCsv] = useState<boolean>(false);
+  const [isSavingCsvUrl, setIsSavingCsvUrl] = useState<boolean>(false);
 
   // --- Load Initial Data ---
   const loadAllData = async () => {
@@ -1239,6 +1240,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showNotification(`Uji koneksi gagal: ${e?.message}`, 'error');
     } finally {
       setIsTestingSheetConnection(false);
+    }
+  };
+
+  // --- Handlers: Save Student CSV URL Only ---
+  const handleSaveCsvUrl = async () => {
+    if (!studentCsvUrl || !studentCsvUrl.trim().startsWith('http')) {
+      showNotification('Harap masukkan URL Google Spreadsheet yang valid!', 'error');
+      return;
+    }
+
+    setIsSavingCsvUrl(true);
+    try {
+      const updatedSettings = {
+        ...settings,
+        studentCsvUrl: studentCsvUrl.trim()
+      };
+      setSettings(updatedSettings);
+      await firestoreService.saveSettings(updatedSettings);
+      showNotification('URL Google Spreadsheet berhasil disimpan ke database!', 'success');
+    } catch (err: any) {
+      showNotification(`Gagal menyimpan URL: ${err?.message || err}`, 'error');
+    } finally {
+      setIsSavingCsvUrl(false);
     }
   };
 
@@ -2672,23 +2696,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={e => setStudentCsvUrl(e.target.value)}
                         className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
                       />
-                      <button
-                        onClick={handlePullStudentsFromCsv}
-                        disabled={isPullingCsv || !studentCsvUrl.trim()}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
-                      >
-                        {isPullingCsv ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Menarik Daftar Siswa...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Download size={14} />
-                            <span>Tarik Daftar Siswa</span>
-                          </>
-                        )}
-                      </button>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={handleSaveCsvUrl}
+                          disabled={isSavingCsvUrl || !studentCsvUrl.trim()}
+                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-700 border border-slate-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                        >
+                          {isSavingCsvUrl ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Menyimpan...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} />
+                              <span>Simpan Link</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={handlePullStudentsFromCsv}
+                          disabled={isPullingCsv || !studentCsvUrl.trim()}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                        >
+                          {isPullingCsv ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Menarik Data...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download size={14} />
+                              <span>Tarik & Sinkronkan</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5 text-[11px] text-indigo-900 leading-relaxed">

@@ -517,6 +517,28 @@ export const sheetService = {
   },
 
   /**
+   * Helper to convert regular Google Sheets link to CORS export CSV link
+   */
+  convertToCsvUrl: (url: string): string => {
+    const clean = url.trim();
+    if (!clean.startsWith('http')) return clean;
+    if (!clean.includes('docs.google.com/spreadsheets')) return clean;
+    
+    // Match the spreadsheet ID
+    const match = clean.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      const id = match[1];
+      // If it's already a published CSV, keep it
+      if (clean.includes('pub?output=csv') || clean.includes('pub?gid=')) {
+        return clean;
+      }
+      // Otherwise, convert to export CSV
+      return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
+    }
+    return clean;
+  },
+
+  /**
    * Pull and parse student list from a published Google Sheet CSV URL
    * This parses a single sheet/tab which contains multiple classes (7 classes, etc.)
    * and groups/extracts classes and students neatly.
@@ -532,9 +554,10 @@ export const sheetService = {
     }
 
     try {
-      const res = await fetch(csvUrl.trim());
+      const targetUrl = sheetService.convertToCsvUrl(csvUrl);
+      const res = await fetch(targetUrl);
       if (!res.ok) {
-        return { success: false, message: `Gagal mengunduh CSV. HTTP Status: ${res.status} ${res.statusText}` };
+        return { success: false, message: `Gagal mengunduh CSV dari ${targetUrl}. HTTP Status: ${res.status} ${res.statusText}` };
       }
       const text = await res.text();
       
