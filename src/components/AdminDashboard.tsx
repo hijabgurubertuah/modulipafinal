@@ -209,6 +209,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isDomainHelpModalOpen, setIsDomainHelpModalOpen] = useState<boolean>(false);
   const [domainCopied, setDomainCopied] = useState<boolean>(false);
 
+  // --- Student CSV Import State ---
+  const [studentCsvUrl, setStudentCsvUrl] = useState<string>('');
+  const [isPullingCsv, setIsPullingCsv] = useState<boolean>(false);
+
   // --- Load Initial Data ---
   const loadAllData = async () => {
     setLoading(true);
@@ -245,6 +249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         googleAppsScriptUrl: st.googleAppsScriptUrl?.trim() || DEFAULT_SETTINGS.googleAppsScriptUrl
       };
       setSettings(activeSettings);
+      setStudentCsvUrl(activeSettings.studentCsvUrl || '');
       setGames(g);
       if (activeSettings.logoUrl) {
         setLogoUrlInput(activeSettings.logoUrl);
@@ -1234,6 +1239,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showNotification(`Uji koneksi gagal: ${e?.message}`, 'error');
     } finally {
       setIsTestingSheetConnection(false);
+    }
+  };
+
+  // --- Handlers: Pull Student Data From CSV ---
+  const handlePullStudentsFromCsv = async () => {
+    if (!studentCsvUrl || !studentCsvUrl.trim().startsWith('http')) {
+      showNotification('Harap masukkan URL CSV Google Spreadsheet yang valid!', 'error');
+      return;
+    }
+
+    setIsPullingCsv(true);
+    showNotification('Sedang mengunduh dan menganalisis data CSV dari Google Spreadsheet...', 'info');
+
+    try {
+      const result = await sheetService.pullStudentsFromCsv(studentCsvUrl);
+      if (!result.success || !result.students || !result.classes) {
+        showNotification(result.message || 'Gagal memproses data CSV.', 'error');
+        return;
+      }
+
+      await firestoreService.replaceAllClasses(result.classes);
+      await firestoreService.replaceAllStudents(result.students);
+
+      const updatedSettings = {
+        ...settings,
+        studentCsvUrl: studentCsvUrl.trim()
+      };
+      setSettings(updatedSettings);
+      await firestoreService.saveSettings(updatedSettings);
+
+      setClasses(result.classes);
+      setStudents(result.students);
+
+      showNotification(
+        `Berhasil menarik ${result.students.length} siswa dan membuat ${result.classes.length} kelas baru! Semua siswa otomatis diatur rapi per kelas.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Error pulling CSV students:', err);
+      showNotification(`Gagal menarik data siswa: ${err?.message || err}`, 'error');
+    } finally {
+      setIsPullingCsv(false);
     }
   };
 
@@ -2574,41 +2621,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {settings.sheetUrl && (
-                        <a
-                          href={settings.sheetUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                          title="Buka file Google Spreadsheet terhubung di tab baru untuk melihat dan mengedit database siswa"
-                        >
-                          <FileSpreadsheet size={14} />
-                          <span>Buka Google Sheet</span>
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
-
-                      <button
-                        onClick={handlePushDataToSheet}
-                        disabled={isSyncingSheet}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-300 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                        title="Kirim dan sinkronkan seluruh data akun siswa & tab kelas ke Google Spreadsheet"
-                      >
-                        <Upload size={14} className={isSyncingSheet ? 'animate-bounce' : ''} />
-                        <span>{isSyncingSheet ? 'Mengirim ke Sheet...' : 'Kirim Siswa ke Sheet'}</span>
-                      </button>
-
-                      {settings.googleAppsScriptUrl && (
-                        <button
-                          onClick={handlePullDataFromSheet}
-                          disabled={isSyncingSheet}
-                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                          title="Tarik data siswa dari Google Sheet"
-                        >
-                          <RefreshCw size={14} className={isSyncingSheet ? 'animate-spin' : ''} />
-                          <span>Tarik Siswa dari Sheet</span>
-                        </button>
-                      )}
                       <button
                         onClick={() => {
                           const defaultClass = studentFilterClass !== 'ALL' && studentFilterClass
@@ -2620,7 +2632,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-300 cursor-pointer"
                       >
                         <FileSpreadsheet size={14} />
-                        <span>Impor Daftar Siswa</span>
+                        <span>Impor Teks Manual</span>
                       </button>
                       <button
                         onClick={() => {
@@ -2633,8 +2645,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
                       >
                         <Plus size={15} />
-                        <span>Tambah Siswa</span>
+                        <span>Tambah Siswa Manual</span>
                       </button>
+                    </div>
+                  </div>
+
+                  {/* Link CSV Google Spreadsheet Section */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                        <FileSpreadsheet size={18} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Tarik Data Siswa dari Google Spreadsheet (Link CSV)</h3>
+                        <p className="text-xs text-slate-500">
+                          Tempelkan link CSV Google Spreadsheet yang sudah di-publish ke web untuk memuat daftar siswa dari 7 kelas sekaligus secara otomatis.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-3">
+                      <input
+                        type="text"
+                        placeholder="Contoh: https://docs.google.com/spreadsheets/d/.../pub?output=csv"
+                        value={studentCsvUrl}
+                        onChange={e => setStudentCsvUrl(e.target.value)}
+                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
+                      />
+                      <button
+                        onClick={handlePullStudentsFromCsv}
+                        disabled={isPullingCsv || !studentCsvUrl.trim()}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
+                      >
+                        {isPullingCsv ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Menarik Daftar Siswa...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download size={14} />
+                            <span>Tarik Daftar Siswa</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5 text-[11px] text-indigo-900 leading-relaxed">
+                      <Info size={15} className="text-indigo-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Cara Mendapatkan Link CSV:</span> Di Google Sheet Anda, klik menu <span className="font-semibold">File &gt; Share (Bagikan) &gt; Publish to web (Publikasikan ke web)</span>. Pilih tab sheet daftar siswa, ubah format dari Web page menjadi <span className="font-bold">Comma-separated values (.csv)</span>, lalu klik Publish. Salin link yang diberikan dan tempel di atas.
+                      </div>
                     </div>
                   </div>
 

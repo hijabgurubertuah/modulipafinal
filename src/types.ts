@@ -153,6 +153,7 @@ export type AppSettings = {
   googleAppsScriptUrl: string;
   sheetId: string;
   sheetUrl?: string;
+  studentCsvUrl?: string;
   adminPassword: string;
   schoolName: string;
   appTitle: string;

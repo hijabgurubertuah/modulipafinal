@@ -108,30 +108,46 @@ export const Login: React.FC<LoginProps> = ({
       console.warn('Initial cache load notice:', err);
     }
 
-    // Background sync from Google Sheet if connected
+    // Background sync from CSV or Google Sheet if connected
     try {
-      const sheetRes = await sheetService.fetchDataFromSheet();
-      if (sheetRes.success && ((sheetRes.classes && sheetRes.classes.length > 0) || (sheetRes.students && sheetRes.students.length > 0))) {
-        const validClasses = (sheetRes.classes || []).filter(c => c.isActive !== false);
-        const validStudents = (sheetRes.students || []).filter(s => s.status !== 'Non-Aktif');
-        
-        if (validClasses.length > 0) {
-          setClassesList(validClasses);
-          // Persist to Firestore
-          for (const cls of validClasses) {
-            firestoreService.saveClass(cls).catch(() => {});
+      const activeSettings = await firestoreService.getSettings();
+      if (activeSettings && activeSettings.studentCsvUrl) {
+        const csvRes = await sheetService.pullStudentsFromCsv(activeSettings.studentCsvUrl);
+        if (csvRes.success && csvRes.students && csvRes.classes) {
+          const validClasses = (csvRes.classes || []).filter(c => c.isActive !== false);
+          const validStudents = (csvRes.students || []).filter(s => s.status !== 'Non-Aktif');
+
+          if (validClasses.length > 0) {
+            setClassesList(validClasses);
+            await firestoreService.replaceAllClasses(validClasses);
+          }
+          if (validStudents.length > 0) {
+            setAllStudents(validStudents);
+            await firestoreService.replaceAllStudents(validStudents);
           }
         }
-        if (validStudents.length > 0) {
-          setAllStudents(validStudents);
-          // Persist to Firestore
-          for (const std of validStudents) {
-            firestoreService.saveStudent(std).catch(() => {});
+      } else {
+        const sheetRes = await sheetService.fetchDataFromSheet();
+        if (sheetRes.success && ((sheetRes.classes && sheetRes.classes.length > 0) || (sheetRes.students && sheetRes.students.length > 0))) {
+          const validClasses = (sheetRes.classes || []).filter(c => c.isActive !== false);
+          const validStudents = (sheetRes.students || []).filter(s => s.status !== 'Non-Aktif');
+          
+          if (validClasses.length > 0) {
+            setClassesList(validClasses);
+            for (const cls of validClasses) {
+              firestoreService.saveClass(cls).catch(() => {});
+            }
+          }
+          if (validStudents.length > 0) {
+            setAllStudents(validStudents);
+            for (const std of validStudents) {
+              firestoreService.saveStudent(std).catch(() => {});
+            }
           }
         }
       }
     } catch (sheetErr) {
-      console.warn('Background Google Sheet sync notice:', sheetErr);
+      console.warn('Background Google Sheet / CSV sync notice:', sheetErr);
     } finally {
       setIsLoadingData(false);
     }

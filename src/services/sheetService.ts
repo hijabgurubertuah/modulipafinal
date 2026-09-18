@@ -517,6 +517,146 @@ export const sheetService = {
   },
 
   /**
+   * Pull and parse student list from a published Google Sheet CSV URL
+   * This parses a single sheet/tab which contains multiple classes (7 classes, etc.)
+   * and groups/extracts classes and students neatly.
+   */
+  pullStudentsFromCsv: async (csvUrl: string): Promise<{
+    success: boolean;
+    message: string;
+    classes?: ClassItem[];
+    students?: StudentItem[];
+  }> => {
+    if (!csvUrl || !csvUrl.trim().startsWith('http')) {
+      return { success: false, message: 'Link URL CSV tidak valid.' };
+    }
+
+    try {
+      const res = await fetch(csvUrl.trim());
+      if (!res.ok) {
+        return { success: false, message: `Gagal mengunduh CSV. HTTP Status: ${res.status} ${res.statusText}` };
+      }
+      const text = await res.text();
+      
+      // Parse CSV rows safely
+      const lines: string[][] = [];
+      let row: string[] = [];
+      let inQuotes = false;
+      let currentVal = '';
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            currentVal += '"';
+            i++; // skip next double quote
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if ((char === ',' || char === ';') && !inQuotes) {
+          row.push(currentVal.trim());
+          currentVal = '';
+        } else if ((char === '\r' || char === '\n') && !inQuotes) {
+          row.push(currentVal.trim());
+          if (row.length > 0 && row.some(cell => cell !== '')) {
+            lines.push(row);
+          }
+          row = [];
+          currentVal = '';
+          if (char === '\r' && nextChar === '\n') {
+            i++; // skip \n
+          }
+        } else {
+          currentVal += char;
+        }
+      }
+      if (currentVal || row.length > 0) {
+        row.push(currentVal.trim());
+        if (row.some(cell => cell !== '')) {
+          lines.push(row);
+        }
+      }
+
+      if (lines.length < 2) {
+        return { success: false, message: 'File CSV kosong atau tidak memiliki data siswa.' };
+      }
+
+      // Find headers
+      const headers = lines[0].map(h => h.trim().toLowerCase());
+      let nameIdx = -1;
+      let classIdx = -1;
+      let nisnIdx = -1;
+
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        if (h.includes('nama') || h.includes('name') || h.includes('siswa') || h.includes('lengkap')) {
+          if (nameIdx === -1) nameIdx = i;
+        }
+        if (h.includes('kelas') || h.includes('class') || h.includes('kls') || h.includes('rombel')) {
+          if (classIdx === -1) classIdx = i;
+        }
+        if (h.includes('nisn') || h.includes('nis') || h.includes('induk') || h.includes('id') || h.includes('password') || h.includes('pin')) {
+          if (nisnIdx === -1) nisnIdx = i;
+        }
+      }
+
+      // Fallbacks
+      if (nameIdx === -1) nameIdx = 0;
+      if (classIdx === -1) classIdx = Math.min(1, headers.length - 1);
+      if (nisnIdx === -1) nisnIdx = Math.min(2, headers.length - 1);
+
+      const uniqueClassesSet = new Set<string>();
+      const students: StudentItem[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i];
+        const sName = row[nameIdx]?.trim();
+        if (sName) {
+          const sClassRaw = row[classIdx]?.trim() || '7A';
+          // Clean class name (e.g. 7A, VIII-B, VII.C etc.)
+          const sClass = sClassRaw.toUpperCase().replace(/\s+/g, '');
+          uniqueClassesSet.add(sClass);
+
+          const sNisn = row[nisnIdx]?.trim() || '';
+          const sId = `std_${sClass}_${sName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+
+          students.push({
+            id: sId,
+            name: sName,
+            userClass: sClass,
+            nisn: sNisn,
+            status: 'Aktif'
+          });
+        }
+      }
+
+      // Create class list neatly
+      const sortedClasses = Array.from(uniqueClassesSet).sort().map(className => {
+        const studentCount = students.filter(s => s.userClass === className).length;
+        return {
+          id: `class_${className}`,
+          name: className,
+          isActive: true,
+          studentCount: studentCount,
+          description: `Kelas ${className} diimpor dari CSV`
+        };
+      });
+
+      return {
+        success: true,
+        message: `Berhasil mengimpor ${students.length} siswa dan membuat ${sortedClasses.length} kelas baru dari CSV!`,
+        classes: sortedClasses,
+        students: students
+      };
+    } catch (err: any) {
+      console.error('Error pulling students from CSV:', err);
+      return { success: false, message: `Gagal mengimpor CSV: ${err?.message || err}` };
+    }
+  },
+
+  /**
    * Generate the full, clean Google Apps Script code for the user's Spreadsheet
    * featuring multi-tab per-class structure (Siswa_7A, Nilai_7A, etc.)
    */
