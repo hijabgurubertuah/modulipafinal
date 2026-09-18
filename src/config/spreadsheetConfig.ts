@@ -4,13 +4,27 @@
  * Anda dapat menanam Spreadsheet ID atau Link CSV langsung di sini
  * tanpa perlu bergantung pada panel admin ataupun database eksternal.
  */
+/**
+ * Konfigurasi Langsung Spreadsheet & Link CSV Siswa
+ * 
+ * Anda dapat menanam Spreadsheet ID atau Link CSV langsung di sini
+ * tanpa perlu bergantung pada panel admin ataupun database eksternal.
+ */
 export const SPREADSHEET_CONFIG = {
   /**
-   * Masukkan Spreadsheet ID Anda di sini (deretan huruf & angka antara /d/ dan /edit di link Google Sheets)
-   * Contoh: '1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU'
-   * ATAU Anda juga bisa menempelkan link CSV lengkap di sini.
+   * 1. ID Spreadsheet Utama (antara /d/ dan /edit):
+   * 15u_RpWrMHwTRDau0H5fwiM_EAAOHKe0dwVPVLIOzA9Y
+   * 
+   * 2. ID Publikasi CSV Web (Publish to Web):
+   * 2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM
    */
-  studentCsvOrSheetId: "2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM"
+  spreadsheetId: "15u_RpWrMHwTRDau0H5fwiM_EAAOHKe0dwVPVLIOzA9Y",
+  publishId: "2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM",
+
+  /**
+   * Link CSV langsung yang aktif digunakan:
+   */
+  studentCsvOrSheetId: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM/pub?output=csv"
 };
 
 /**
@@ -18,7 +32,15 @@ export const SPREADSHEET_CONFIG = {
  */
 export function getDirectCsvUrl(): string {
   const val = (SPREADSHEET_CONFIG.studentCsvOrSheetId || '').trim();
-  if (!val) return '';
+  if (!val) {
+    if (SPREADSHEET_CONFIG.publishId) {
+      return `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_CONFIG.publishId}/pub?output=csv`;
+    }
+    if (SPREADSHEET_CONFIG.spreadsheetId) {
+      return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_CONFIG.spreadsheetId}/export?format=csv`;
+    }
+    return '';
+  }
   
   // Jika sudah berupa URL lengkap
   if (val.startsWith('http://') || val.startsWith('https://')) {
@@ -31,6 +53,11 @@ export function getDirectCsvUrl(): string {
     return val;
   }
   
-  // Jika berupa Spreadsheet ID saja (misal: 1AbcXYZ...)
+  // Jika berupa Publish to Web ID (diawali 2PACX-)
+  if (val.startsWith('2PACX-')) {
+    return `https://docs.google.com/spreadsheets/d/e/${val}/pub?output=csv`;
+  }
+
+  // Jika berupa Spreadsheet ID biasa (misal: 15u_RpWr...)
   return `https://docs.google.com/spreadsheets/d/${val}/export?format=csv`;
 }

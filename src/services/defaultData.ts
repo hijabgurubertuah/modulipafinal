@@ -917,9 +917,9 @@ export const DEFAULT_STUDENTS: StudentItem[] = [];
 
 export const DEFAULT_SETTINGS: AppSettings = {
   googleAppsScriptUrl: 'https://script.google.com/macros/s/AKfycbwcdea5JWF2NxbfzVdH9Namnxdf_mlTe6ry7wHoVolRscTsXbKDypQbJCGndPvHB0Sd/exec',
-  sheetId: '1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU',
-  sheetUrl: 'https://docs.google.com/spreadsheets/d/1y8MREQ6tr497vX_3MiO5EJeZK7ufbHH--xfhUUAOADU/edit',
-  studentCsvUrl: '',
+  sheetId: '15u_RpWrMHwTRDau0H5fwiM_EAAOHKe0dwVPVLIOzA9Y',
+  sheetUrl: 'https://docs.google.com/spreadsheets/d/15u_RpWrMHwTRDau0H5fwiM_EAAOHKe0dwVPVLIOzA9Y/edit',
+  studentCsvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTdvhYPq3aVHpE643ezl4Vpx0JnztLdNx2YbG5RSQJSalpe6u6dvkdli-FCAz4T_oTtw-Myrq1_s3sM/pub?output=csv',
   adminPassword: 'gurusmp',
   schoolName: 'SMPN 1 Bengkalis',
   appTitle: 'Modul Belajar Berkebun IPA SMP',
