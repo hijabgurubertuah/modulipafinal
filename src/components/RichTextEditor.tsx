@@ -82,17 +82,25 @@ const normalizeVideoUrl = (url: string): { embedUrl: string; type: 'youtube' | '
 export const convertMarkdownToRichHtml = (val: string): string => {
   if (!val) return '';
   let html = val;
+  // Convert markdown **bold** or __bold__ -> <strong>bold</strong>
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // Convert markdown *italic* or _italic_ -> <em>italic</em>
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(/(^|[^_])_([^_]+)_/g, '$1<em>$2</em>');
+
+  // Convert markdown ~~strikethrough~~ -> <del>strikethrough</del>
+  html = html.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
   // If text contains no HTML tags, wrap double linebreaks into paragraphs
-  if (!/<[a-z][\s\S]*>/i.test(val)) {
-    const paragraphs = val.split(/\n\s*\n/);
+  if (!/<[a-z][\s\S]*>/i.test(html)) {
+    const paragraphs = html.split(/\n\s*\n/);
     html = paragraphs
       .map(p => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
       .join('');
   }
-  // Convert markdown **bold** -> <strong>bold</strong>
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Convert markdown *italic* -> <em>italic</em>
-  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+
   return html;
 };
 
@@ -423,16 +431,11 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       {/* ----------------------------------------------------------- */}
       {/* TOP HEADER: Label & Live Preview Badge                      */}
       {/* ----------------------------------------------------------- */}
-      <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
         <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
           <PenTool size={14} className="text-emerald-600" />
           <span>{label}</span>
         </label>
-
-        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl shadow-2xs">
-          <Sparkles size={12} />
-          <span>Live Editor (Pratinjau Langsung)</span>
-        </div>
       </div>
 
       {/* ----------------------------------------------------------- */}

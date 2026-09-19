@@ -9,6 +9,7 @@ import {
   Info, 
   Code2
 } from 'lucide-react';
+import { convertMarkdownToRichHtml } from './RichTextEditor';
 
 interface CustomGameRendererProps {
   code: string;
@@ -292,7 +293,10 @@ export const CustomGameRenderer: React.FC<CustomGameRendererProps> = ({
           <Sparkles size={16} className="text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <strong className="font-bold text-amber-300">Cara Bermain:</strong>
-            <p className="leading-relaxed whitespace-pre-wrap">{instructions}</p>
+            <div 
+              className="leading-relaxed [&_strong]:font-bold [&_strong]:text-amber-300 [&_em]:italic"
+              dangerouslySetInnerHTML={{ __html: convertMarkdownToRichHtml(instructions) }}
+            />
           </div>
         </div>
       )}

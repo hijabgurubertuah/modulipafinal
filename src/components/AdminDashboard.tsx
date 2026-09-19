@@ -2004,7 +2004,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="w-full">
                     {editingModule ? (
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-5">
-                        {/* Header Modul: Judul, Status Draf, Pratinjau & Tombol Simpan ke Firebase */}
+                        {/* Header Modul: Judul & Status Draf */}
                         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black shrink-0">
@@ -2017,33 +2017,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               Mode Draf
                             </span>
                           </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => onBackToStudentView(editingModule.id)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-                              title={`Buka dan uji Modul ${editingModule.id} di tampilan siswa`}
-                            >
-                              <Eye size={14} />
-                              <span>Pratinjau</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={isSavingSingleModule}
-                              onClick={handleSaveModuleMeta}
-                              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                              title="Simpan seluruh perubahan draf modul ini ke Firebase Cloud"
-                            >
-                              {isSavingSingleModule ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <Save size={14} />
-                              )}
-                              <span>Simpan ke Firebase</span>
-                            </button>
-                          </div>
                         </div>
 
                         {/* Module Metadata Form */}
@@ -2055,7 +2028,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <input
                               type="text"
                               value={editingModule.title}
-                              onChange={e => setEditingModule({ ...editingModule, title: e.target.value })}
+                              onChange={e => {
+                                const newTitle = e.target.value;
+                                setEditingModule({ ...editingModule, title: newTitle });
+                                setModules(prev => prev.map(m => m.id === editingModule.id ? { ...m, title: newTitle } : m));
+                              }}
                               className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
                             />
                           </div>
@@ -2264,6 +2241,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {/* Tombol Simpan Perubahan Modul Khusus di Bawah & Tombol Hapus */}
                           <div className="pt-4 border-t border-slate-200">
                             <div className="flex items-center gap-2.5">
+                              <button
+                                type="button"
+                                onClick={() => onBackToStudentView(editingModule.id)}
+                                className="py-3.5 px-5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-2xl text-sm font-bold transition-all shadow-2xs cursor-pointer active:scale-95 flex items-center justify-center gap-2 shrink-0"
+                                title={`Buka dan uji Modul ${editingModule.id} di tampilan siswa`}
+                              >
+                                <Eye size={18} />
+                                <span>Pratinjau</span>
+                              </button>
+
                               <button
                                 type="button"
                                 disabled={isSavingSingleModule}
@@ -3897,95 +3884,115 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Mode Switcher: Hanya ditampilkan jika sedang mengelola game */}
-              {editingPage.isGame && pageEditorTab === 'game' && (
-                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <div className="flex-1 py-2 px-3 rounded-lg text-xs font-bold text-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xs flex items-center justify-center gap-2">
-                    <Gamepad2 size={15} />
-                    <span>Game Edukasi Interaktif</span>
-                  </div>
+              {/* Modal Content Area */}
+              <div className="space-y-4 text-xs">
+                {/* 1. Tombol / Selector Halaman Game (DI ATAS JUDUL HALAMAN, LEBAR PENDEK SESUAI HP) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Halaman Game
+                  </label>
+                  <select
+                    aria-label="Halaman Game"
+                    value={editingPage.isGame ? (editingPage.gameId || 'custom') : 'text'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === 'text') {
+                        setEditingPage({
+                          ...editingPage,
+                          isGame: false,
+                          gameId: undefined
+                        });
+                        setPageEditorTab('content');
+                      } else {
+                        const chosen = games.find(g => g.id === val);
+                        if (chosen) {
+                          setEditingPage({
+                            ...editingPage,
+                            isGame: true,
+                            title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : chosen.title,
+                            gameId: chosen.id,
+                            gameType: chosen.type,
+                            gameCode: chosen.code || '',
+                            gameInstructions: chosen.instructions || '',
+                            gamePassScore: chosen.passScore || 100
+                          });
+                        } else {
+                          setEditingPage({
+                            ...editingPage,
+                            isGame: true,
+                            gameType: 'custom_html',
+                            gameCode: GAME_TEMPLATES[0]?.code || '',
+                            gameInstructions: ''
+                          });
+                        }
+                        setPageEditorTab('game');
+                      }
+                    }}
+                    className="w-full sm:w-[220px] px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-xl font-bold text-xs transition-all cursor-pointer outline-hidden shadow-2xs"
+                  >
+                    <option value="text">📄 Materi Teks Biasa</option>
+                    <optgroup label="Pilih Game Interaktif:">
+                      {games.map(g => (
+                        <option key={`game-sel-${g.id}`} value={g.id}>
+                          🎮 {g.title}
+                        </option>
+                      ))}
+                      {games.length === 0 && (
+                        <option value="custom">🎮 Game Interaktif</option>
+                      )}
+                    </optgroup>
+                  </select>
                 </div>
-              )}
 
-              {/* ------------------------------------------------------------- */}
-              {/* TAB 1: MATERI STANDAR (Judul, Rich Text Editor, Refleksi)     */}
-              {/* ------------------------------------------------------------- */}
-              {pageEditorTab === 'content' && (
-                <div className="space-y-4 text-xs">
-                  {/* Judul Halaman & Dropdown Ubah ke Game */}
-                  <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-700 mb-1.5">Judul Halaman</label>
-                      <input
-                        type="text"
-                        value={editingPage.title}
-                        onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
-                        placeholder="Judul halaman..."
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-hidden transition-all"
+                {/* 2. Judul Halaman Input */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Judul Halaman</label>
+                  <input
+                    type="text"
+                    value={editingPage.title}
+                    onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
+                    placeholder="Judul halaman..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-hidden transition-all"
+                  />
+                </div>
+
+                {/* 3. Area Isi Materi: Preview Game (jika isGame) atau RichTextEditor (jika Teks) */}
+                {editingPage.isGame ? (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between text-xs">
+                      <span className="font-bold text-purple-950 flex items-center gap-1.5">
+                        <Gamepad2 size={15} className="text-purple-600 shrink-0" />
+                        <span>Pratinjau Game Interaktif: {editingPage.title}</span>
+                      </span>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs bg-white min-h-[300px]">
+                      <CustomGameRenderer
+                        code={editingPage.gameCode || ''}
+                        gameType={editingPage.gameType || 'custom_html'}
+                        title={editingPage.title || 'Game Edukasi Interaktif'}
+                        instructions={editingPage.gameInstructions}
+                        onComplete={(score) => {
+                          showNotification(`Uji Coba Berhasil! Skor game: ${score || 100} poin.`, 'success');
+                        }}
                       />
                     </div>
-                    
-                    {/* Pilih Game Interaktif Singkat */}
-                    <div className="shrink-0 flex items-center gap-2">
-                      <select
-                        aria-label="Pilih Game Interaktif"
-                        value=""
-                        onChange={e => {
-                          const selectedGameId = e.target.value;
-                          if (!selectedGameId) return;
-                          const chosen = games.find(g => g.id === selectedGameId);
-                          if (chosen) {
-                            setEditingPage({
-                              ...editingPage,
-                              isGame: true,
-                              title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : chosen.title,
-                              gameId: chosen.id,
-                              gameType: chosen.type,
-                              gameCode: chosen.code || '',
-                              gameInstructions: chosen.instructions || '',
-                              gamePassScore: chosen.passScore || 100
-                            });
-                            setPageEditorTab('game');
-                          } else {
-                            setEditingPage({
-                              ...editingPage,
-                              isGame: true,
-                              gameType: 'custom_html',
-                              gameCode: GAME_TEMPLATES[0]?.code || '',
-                              gameInstructions: ''
-                            });
-                            setPageEditorTab('game');
-                          }
-                        }}
-                        className="px-3.5 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl font-bold text-xs transition-all cursor-pointer outline-hidden shadow-2xs"
-                      >
-                        <option value="">🎮 Ubah ke Game Interaktif...</option>
-                        {games.map(g => (
-                          <option key={`pick-game-${g.id}`} value={g.id}>
-                            {g.title} ({g.type === 'custom_tsx' ? 'React' : 'HTML'})
-                          </option>
-                        ))}
-                        {games.length === 0 && (
-                          <option value="default_new">Game Interaktif Baru</option>
-                        )}
-                      </select>
-                    </div>
                   </div>
-
-                  {/* WYSIWYG Rich Text Editor Lengkap & Modern */}
+                ) : (
                   <div>
                     <RichTextEditor
                       label="Teks Konten Materi Lengkap"
                       value={editingPage.content || ''}
                       onChange={val => setEditingPage({ ...editingPage, content: val })}
-                      placeholder="Mulai ketik isi materi pembelajaran yang lengkap, terstruktur, dan interaktif di sini..."
+                      placeholder="Mulai ketik isi materi pembelajaran..."
                       minHeight="320px"
                       webAppUrl={settings.driveUploadScriptUrl || settings.googleAppsScriptUrl}
                       defaultFolderId={settings.driveFolderId}
                     />
                   </div>
+                )}
 
-                  {/* Pertanyaan Refleksi (Di Bawah Materi) */}
+                {/* 4. Pertanyaan Refleksi (Tetap Ada di Bawah Game maupun Teks) */}
                   {editingPage.quiz ? (
                     <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
                       <div className="flex items-center justify-between gap-2">
@@ -4152,273 +4159,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* ------------------------------------------------------------- */}
-              {/* TAB 2: GAME INTERAKTIF (KODE HTML / TSX DENGAN LIVE PREVIEW)  */}
-              {/* ------------------------------------------------------------- */}
-              {pageEditorTab === 'game' && (
-                <div className="space-y-4 text-xs">
-                  {/* Banner & Tombol Batalkan Game (Kembali ke Materi Biasa) */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-purple-50 border border-purple-200 p-3.5 rounded-2xl">
-                    <div className="flex items-center gap-2.5">
-                      <span className="p-2 bg-purple-600 text-white rounded-xl shadow-2xs">
-                        <Gamepad2 size={16} />
-                      </span>
-                      <div>
-                        <h4 className="font-bold text-purple-950 text-xs sm:text-sm">Halaman Game Interaktif</h4>
-                        <p className="text-[11px] text-purple-700">Pilih game dari Kelola Game atau sesuaikan kode game di bawah ini.</p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPage({
-                          ...editingPage,
-                          isGame: false
-                        });
-                        setPageEditorTab('content');
-                      }}
-                      className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 flex items-center gap-1.5"
-                    >
-                      <RotateCcw size={14} />
-                      <span>Kembalikan ke Materi Biasa</span>
-                    </button>
-                  </div>
-
-                  {/* Game Configuration Bar */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                    <div>
-                      <label className="block font-bold text-slate-800 mb-1">
-                        Judul Game Edukasi
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Contoh: Game Tebak Istilah Sains"
-                        value={editingPage.title}
-                        onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-800 mb-1">
-                        Format Kode Game
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingPage({ ...editingPage, gameType: 'custom_html' })}
-                          className={`py-2 px-2.5 rounded-lg font-bold text-xs border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                            (editingPage.gameType || 'custom_html') === 'custom_html'
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Code2 size={14} />
-                          <span>HTML5 & JS</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingPage({ ...editingPage, gameType: 'custom_tsx' })}
-                          className={`py-2 px-2.5 rounded-lg font-bold text-xs border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                            editingPage.gameType === 'custom_tsx'
-                              ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Sparkles size={14} />
-                          <span>React / TSX</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Game Bank Quick Selector (from Firebase) */}
-                  {games.length > 0 && (
-                    <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-purple-900 flex items-center gap-1.5">
-                          <Gamepad2 size={14} className="text-purple-600" />
-                          <span>Pilih dari Daftar Game:</span>
-                        </span>
-                      </div>
-                      <select
-                        aria-label="Pilih Game dari Bank Game"
-                        value={editingPage.gameId || ''}
-                        onChange={e => {
-                          const chosen = games.find(g => g.id === e.target.value);
-                          if (chosen) {
-                            setEditingPage({
-                              ...editingPage,
-                              title: chosen.title,
-                              gameId: chosen.id,
-                              gameType: chosen.type,
-                              gameCode: chosen.code || '',
-                              gameInstructions: chosen.instructions || '',
-                              gamePassScore: chosen.passScore || 100
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-purple-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-hidden"
-                      >
-                        <option value="">-- Pilih Game --</option>
-                        {games.map(g => (
-                          <option key={`game-opt-${g.id}`} value={g.id}>
-                            {g.title} ({g.type === 'custom_tsx' ? 'React' : 'HTML5'})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Template Picker Quick Bar */}
-                  <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-indigo-900 flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-indigo-600" />
-                        <span>Pilih Template Game Siap Pakai:</span>
-                      </span>
-                      <span className="text-[10px] text-indigo-600 font-medium hidden sm:inline">
-                        Klik untuk langsung mengisi kode dasar
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {GAME_TEMPLATES.map((tmpl) => (
-                        <button
-                          key={tmpl.id}
-                          type="button"
-                          onClick={() => {
-                            setEditingPage({
-                              ...editingPage,
-                              title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : tmpl.name,
-                              gameType: tmpl.type,
-                              gameCode: tmpl.code,
-                              gameInstructions: tmpl.description
-                            });
-                          }}
-                          className="p-2 bg-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-400 rounded-lg text-left transition-all group cursor-pointer shadow-xs"
-                        >
-                          <div className="font-bold text-slate-900 group-hover:text-indigo-700 text-[11px] truncate">
-                            {tmpl.name}
-                          </div>
-                          <div className="text-[10px] text-slate-500 uppercase font-mono mt-0.5">
-                            {tmpl.type === 'custom_tsx' ? '⚛️ React / TSX' : '🌐 HTML5'}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Sub-tabs: Editor Kode VS Pratinjau Uji Coba */}
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setGameEditorSubTab('code')}
-                        className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                          gameEditorSubTab === 'code'
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Code2 size={14} />
-                        <span>Editor Kode Game</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setGameEditorSubTab('preview')}
-                        className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                          gameEditorSubTab === 'preview'
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
-                        }`}
-                      >
-                        <PlayCircle size={14} />
-                        <span>Uji Coba & Mainkan Game</span>
-                      </button>
-                    </div>
-
-                    <span className="text-[11px] text-slate-500 hidden sm:inline">
-                      {gameEditorSubTab === 'code' ? 'Mendukung HTML, CSS, JavaScript, atau React JSX' : 'Uji coba interaksi sebelum disimpan'}
-                    </span>
-                  </div>
-
-                  {/* SUB-VIEW 1: CODE EDITOR */}
-                  {gameEditorSubTab === 'code' && (
-                    <div className="space-y-3">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block font-bold text-slate-700 font-mono">
-                            {editingPage.gameType === 'custom_tsx' ? 'Kode Komponen React (TSX / JSX):' : 'Kode HTML / CSS / JS:'}
-                          </label>
-                          <span className="text-[10px] font-mono text-slate-500">
-                            {editingPage.gameCode?.length || 0} karakter
-                          </span>
-                        </div>
-                        <textarea
-                          rows={12}
-                          value={editingPage.gameCode || ''}
-                          onChange={e => setEditingPage({ ...editingPage, gameCode: e.target.value })}
-                          placeholder={
-                            editingPage.gameType === 'custom_tsx'
-                              ? `export default function Game() {\n  const [score, setScore] = useState(0);\n  return (\n    <div className="p-4 text-center">\n      <h1 className="text-xl font-bold">Game Matematika</h1>\n    </div>\n  );\n}`
-                              : `<div class="game-container">\n  <h2>Game Sains</h2>\n  <button onclick="alert('Halo!')">Mulai</button>\n</div>\n<script>\n  // Logika game\n</script>`
-                          }
-                          className="w-full px-3.5 py-3 bg-slate-950 text-emerald-400 border border-slate-800 rounded-xl font-mono text-[11px] leading-relaxed focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
-                          spellCheck={false}
-                        />
-                      </div>
-
-                      {/* Optional Game Instructions */}
-                      <div>
-                        <label className="block font-semibold text-slate-700 mb-1">
-                          Petunjuk & Cara Bermain untuk Siswa (Opsional)
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={editingPage.gameInstructions || ''}
-                          onChange={e => setEditingPage({ ...editingPage, gameInstructions: e.target.value })}
-                          placeholder="Jelaskan cara memainkan game ini kepada siswa..."
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* SUB-VIEW 2: LIVE TEST PLAY */}
-                  {gameEditorSubTab === 'preview' && (
-                    <div className="space-y-2">
-                      <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-900 text-xs flex items-center justify-between">
-                        <span>🎮 <strong>Mode Uji Coba:</strong> Anda dapat memainkan game ini secara langsung persis seperti tampilan di layar siswa.</span>
-                        <button
-                          type="button"
-                          onClick={() => setGameEditorSubTab('code')}
-                          className="text-xs font-bold text-indigo-700 underline cursor-pointer"
-                        >
-                          Kembali Edit Kode
-                        </button>
-                      </div>
-
-                      <div className="border border-slate-300 rounded-2xl overflow-hidden shadow-inner">
-                        <CustomGameRenderer
-                          code={editingPage.gameCode || ''}
-                          gameType={editingPage.gameType || 'custom_html'}
-                          title={editingPage.title || 'Game Edukasi Interaktif'}
-                          instructions={editingPage.gameInstructions}
-                          onComplete={(score) => {
-                            showNotification(`Uji Coba Berhasil! Skor game: ${score || 100} poin.`, 'success');
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Modal Footer Actions */}
               <div className="flex items-center justify-between pt-3 border-t border-slate-200">

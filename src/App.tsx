@@ -28,6 +28,7 @@ import { StatCard } from './components/StatCard';
 import { Dialog } from './components/Dialog';
 import { ColorInput } from './components/ColorInput';
 import { Login } from './components/Login';
+import { convertMarkdownToRichHtml } from './components/RichTextEditor';
 import { ThemeButton } from './components/ThemeButton';
 import { Home } from './components/Home';
 import { Hasil } from './components/Hasil';
@@ -969,9 +970,10 @@ const App = () => {
                 <div className="prose prose-invert prose-slate max-w-none">
                   <h1 className="text-3xl font-black tracking-tight mb-4">{selectedMaterial.title}</h1>
                   {!selectedMaterial.Component && (
-                    <div className="text-lg leading-relaxed opacity-90 whitespace-pre-line mb-8">
-                      {selectedMaterial.content}
-                    </div>
+                    <div 
+                      className="text-lg leading-relaxed opacity-90 mb-8 [&_strong]:font-bold [&_strong]:text-white [&_em]:italic"
+                      dangerouslySetInnerHTML={{ __html: convertMarkdownToRichHtml(selectedMaterial.content) }}
+                    />
                   )}
                   {selectedMaterial.Component && <selectedMaterial.Component />}
                 </div>

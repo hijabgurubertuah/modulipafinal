@@ -8,16 +8,13 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  FolderOpen,
-  UploadCloud,
   HelpCircle,
-  Sparkles,
   Link2,
-  ChevronDown,
-  ChevronUp,
+  FolderOpen,
+  Play,
+  X,
   FileCode,
-  ShieldCheck,
-  Play
+  Sparkles
 } from 'lucide-react';
 import { AppSettings } from '../types';
 import { GOOGLE_APPS_SCRIPT_CODE, APPS_SCRIPT_DEPLOY_STEPS } from '../utils/appsScriptCode';
@@ -48,9 +45,10 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
     message: string;
   }>({ type: 'idle', message: '' });
 
-  const [showCodeDetails, setShowCodeDetails] = useState(true);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
 
-  // Copy full Code.gs script to clipboard
+  // Salin Kode Code.gs
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_CODE);
@@ -62,10 +60,10 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
     }
   };
 
-  // Test Web App URL with Ping action
+  // Test Web App Connection
   const handleTestConnection = async () => {
     if (!scriptUrlInput || !scriptUrlInput.trim()) {
-      showNotification('Harap masukkan URL Web App Google Apps Script terlebih dahulu.', 'error');
+      showNotification('Harap masukkan URL Web App Google Apps Script.', 'error');
       setTestStatus({
         type: 'error',
         message: 'URL Web App tidak boleh kosong.'
@@ -74,16 +72,16 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
     }
 
     if (!scriptUrlInput.trim().startsWith('https://script.google.com/')) {
-      showNotification('Format URL tidak valid. URL harus dimulai dengan "https://script.google.com/macros/s/.../exec"', 'error');
+      showNotification('Format URL tidak valid. Harus diawali "https://script.google.com/..."', 'error');
       setTestStatus({
         type: 'error',
-        message: 'Format URL harus merupakan link Web App Google Apps Script (/exec).'
+        message: 'Format URL harus link Web App Google Apps Script (/exec).'
       });
       return;
     }
 
     setIsTesting(true);
-    setTestStatus({ type: 'idle', message: 'Menghubungi server Google Apps Script...' });
+    setTestStatus({ type: 'idle', message: 'Menghubungi server Apps Script...' });
 
     try {
       const pingUrl = `${scriptUrlInput.trim()}${scriptUrlInput.includes('?') ? '&' : '?'}action=ping`;
@@ -93,7 +91,7 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
       if (data && (data.success || data.status === 'ok' || data.status === 'online')) {
         setTestStatus({
           type: 'success',
-          message: 'Koneksi Berhasil! Google Apps Script online dan siap menerima file gambar ke Drive.'
+          message: 'Koneksi Berhasil! Google Apps Script aktif dan siap digunakan.'
         });
         showNotification('Koneksi Google Apps Script terverifikasi aktif!', 'success');
       } else {
@@ -105,13 +103,13 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
         type: 'error',
         message: `Gagal terhubung: ${err.message || 'Pastikan opsi "Who has access" diatur ke "Anyone" saat Deployment'}.`
       });
-      showNotification('Gagal menghubungi Web App. Periksa konfigurasi deploy Apps Script.', 'error');
+      showNotification('Gagal menghubungi Web App.', 'error');
     } finally {
       setIsTesting(false);
     }
   };
 
-  // Save settings to Firebase
+  // Simpan Pengaturan
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -123,7 +121,7 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
       };
 
       await onSaveSettings(updatedSettings);
-      showNotification('Konfigurasi Google Apps Script berhasil disimpan ke Firebase!', 'success');
+      showNotification('Konfigurasi Google Apps Script berhasil disimpan!', 'success');
     } catch (err: any) {
       showNotification(`Gagal menyimpan: ${err.message}`, 'error');
     } finally {
@@ -132,217 +130,225 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      {/* Page Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
-              <Code2 size={20} />
-            </span>
-            <h2 className="text-xl font-bold text-slate-900">
-              Integrasi Google Apps Script (Drive Media Uploader)
-            </h2>
+    <div className="space-y-5 max-w-4xl mx-auto">
+      {/* Header Minimalis */}
+      <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200">
+        <div className="flex items-center gap-2.5">
+          <span className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+            <Code2 size={18} />
+          </span>
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Google Apps Script</h2>
+            <p className="text-xs text-slate-500">Integrasi Drive Upload & Media Galeri</p>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Konfigurasi backend Google Drive untuk mengunggah gambar materi, kelola galeri cloud, dan simpan link otomatis ke Firebase.
-          </p>
         </div>
 
-        <a
-          href="https://script.google.com/home/start"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-        >
-          <ExternalLink size={14} />
-          <span>Buka Google Apps Script</span>
-        </a>
+        <div className="flex items-center gap-2">
+          {/* Tombol Petunjuk Pop-up Modal */}
+          <button
+            type="button"
+            onClick={() => setIsHelpOpen(true)}
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            title="Petunjuk Deployment"
+          >
+            <HelpCircle size={15} className="text-indigo-600" />
+            <span className="hidden sm:inline">Petunjuk</span>
+          </button>
+
+          {/* External Link */}
+          <a
+            href="https://script.google.com/home/start"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            title="Buka Google Apps Script Console"
+          >
+            <ExternalLink size={15} />
+            <span className="hidden sm:inline">Buka Apps Script</span>
+          </a>
+        </div>
       </div>
 
-      {/* SECTION 1: URL CONFIGURATION & TEST CONNECTION */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
-        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <Link2 size={16} className="text-indigo-600" />
-          <span>Pengaturan Link Web App Google Apps Script</span>
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Card Utama Form Konfigurasi */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              URL Web App Apps Script (Wajib berakhiran <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600 font-mono text-[11px]">/exec</code>)
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              URL Web App (<code className="text-indigo-600 font-mono text-[11px]">/exec</code>)
             </label>
             <input
               type="url"
               value={scriptUrlInput}
               onChange={(e) => setScriptUrlInput(e.target.value)}
-              placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden"
+              placeholder="https://script.google.com/macros/s/.../exec"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Dihasilkan setelah Anda memilih menu <strong>Deploy &gt; New deployment &gt; Web App</strong> di Apps Script.
-            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 mb-1">
               ID Folder Google Drive (Opsional)
             </label>
             <input
               type="text"
               value={folderIdInput}
               onChange={(e) => setFolderIdInput(e.target.value)}
-              placeholder="Contoh: 15u_RpWrMHwTRDau0H..."
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden"
+              placeholder="15u_RpWrMHwTRDau0H..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Biarkan kosong jika ingin otomatis membuat folder bernama <code>App_Media_Uploads</code> di Drive.
-            </p>
           </div>
         </div>
 
-        {/* Test Result Message */}
+        {/* Test Connection Alert */}
         {testStatus.type !== 'idle' && (
           <div
-            className={`p-3.5 rounded-2xl border flex items-start gap-2.5 text-xs ${
+            className={`p-3 rounded-xl border flex items-center gap-2 text-xs font-semibold ${
               testStatus.type === 'success'
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                : 'bg-rose-50 border-rose-300 text-rose-800'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
             }`}
           >
             {testStatus.type === 'success' ? (
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
             ) : (
-              <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+              <AlertCircle size={15} className="text-rose-600 shrink-0" />
             )}
-            <span className="font-semibold">{testStatus.message}</span>
+            <span>{testStatus.message}</span>
           </div>
         )}
 
-        {/* Actions Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            disabled={isTesting || !scriptUrlInput}
-            onClick={handleTestConnection}
-            className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-          >
-            <Play size={13} className={isTesting ? 'animate-spin' : 'text-indigo-600'} />
-            <span>{isTesting ? 'Menguji Koneksi...' : 'Uji Koneksi (Test Ping)'}</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={handleSave}
-            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer disabled:opacity-50"
-          >
-            {isSaving ? (
-              <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Menyimpan ke Firebase...</span>
-              </>
-            ) : (
-              <>
-                <Save size={14} />
-                <span>Simpan ke Firebase</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 2: STEP-BY-STEP DEPLOYMENT GUIDE */}
-      <div className="bg-slate-50 rounded-3xl p-5 sm:p-6 border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Sparkles size={16} className="text-amber-500" />
-            <span>Panduan Langkah Penerapan (Deployment Guide)</span>
-          </h3>
-          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2.5 py-0.5 rounded-full">
-            6 Langkah Mudah
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {APPS_SCRIPT_DEPLOY_STEPS.map((step) => (
-            <div
-              key={step.step}
-              className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1.5"
-            >
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                  {step.step}
-                </span>
-                <h4 className="text-xs font-bold text-slate-800 leading-tight">
-                  {step.title}
-                </h4>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed pl-8">
-                {step.description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* SECTION 3: CODE.GS FULL SCRIPT VIEWER WITH COPY BUTTON */}
-      <div className="bg-slate-900 text-slate-100 rounded-3xl border border-slate-800 shadow-xl overflow-hidden">
-        {/* Code Header */}
-        <div className="px-5 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
-              <FileCode size={16} />
-            </span>
-            <div>
-              <h3 className="text-xs font-bold text-white tracking-wide">
-                Code.gs — Kode Google Apps Script Lengkap
-              </h3>
-              <p className="text-[10px] text-slate-400 font-mono">
-                JavaScript / Google Apps Script Engine
-              </p>
-            </div>
-          </div>
-
+        {/* Action Row */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={isTesting || !scriptUrlInput}
+              onClick={handleTestConnection}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Play size={13} className={isTesting ? 'animate-spin' : 'text-indigo-600'} />
+              <span>{isTesting ? 'Menguji...' : 'Uji Koneksi'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleCopyCode}
-              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
             >
               {isCopiedCode ? (
                 <>
-                  <Check size={14} className="text-emerald-300" />
-                  <span>Tersalin!</span>
+                  <Check size={13} className="text-emerald-600" />
+                  <span>Kode Tersalin</span>
                 </>
               ) : (
                 <>
-                  <Copy size={14} />
-                  <span>Salin Seluruh Kode Script</span>
+                  <Copy size={13} className="text-slate-600" />
+                  <span>Salin Kode Script</span>
                 </>
               )}
             </button>
 
             <button
               type="button"
-              onClick={() => setShowCodeDetails(!showCodeDetails)}
-              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
-              title={showCodeDetails ? 'Sembunyikan Kode' : 'Tampilkan Kode'}
+              onClick={() => setIsCodeModalOpen(true)}
+              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs transition-all cursor-pointer"
+              title="Lihat Kode Script Lengkap"
             >
-              {showCodeDetails ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              <FileCode size={15} />
             </button>
           </div>
-        </div>
 
-        {/* Code Block Container */}
-        {showCodeDetails && (
-          <div className="p-4 sm:p-5 overflow-x-auto max-h-[480px] overflow-y-auto font-mono text-[11px] sm:text-xs leading-relaxed bg-slate-950/50">
-            <pre className="text-emerald-300 selection:bg-indigo-600 selection:text-white">
-              <code>{GOOGLE_APPS_SCRIPT_CODE}</code>
-            </pre>
-          </div>
-        )}
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={handleSave}
+            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+            <span>Simpan</span>
+          </button>
+        </div>
       </div>
+
+      {/* MODAL POPUP PETUNJUK DEPLOYMENT */}
+      {isHelpOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-800">Petunjuk Deployment Google Apps Script</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              {APPS_SCRIPT_DEPLOY_STEPS.map((step) => (
+                <div key={step.step} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                    {step.step}
+                  </span>
+                  <div>
+                    <h4 className="font-bold text-slate-800">{step.title}</h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5">{step.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VIEW CODE.GS */}
+      {isCodeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-950 text-slate-100 rounded-2xl max-w-2xl w-full p-4 space-y-3 shadow-2xl border border-slate-800 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <FileCode size={16} className="text-indigo-400" />
+                <h3 className="text-xs font-bold text-white font-mono">Code.gs</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy size={12} />
+                  <span>Salin Kode</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCodeModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 bg-slate-900 rounded-xl font-mono text-[11px] leading-relaxed text-emerald-300">
+              <pre><code>{GOOGLE_APPS_SCRIPT_CODE}</code></pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

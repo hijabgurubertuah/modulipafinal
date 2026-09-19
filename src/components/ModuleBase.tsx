@@ -12,6 +12,7 @@ import { Game2 } from './Game2';
 import { Game3 } from './Game3';
 import { MemoryGame } from './MemoryGame';
 import { CustomGameRenderer } from './CustomGameRenderer';
+import { convertMarkdownToRichHtml } from './RichTextEditor';
 import { ThemeButton } from './ThemeButton';
 import { firestoreService, hydrateModulePages } from '../services/firestoreService';
 import { getDefaultModules } from '../services/defaultData';
@@ -61,17 +62,8 @@ interface ModuleBaseProps {
 
 const renderFormattedText = (text?: string) => {
   if (!text) return null;
-  const parts = text.split('**');
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
-      return (
-        <strong key={index} className="font-extrabold text-slate-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1 py-0.5 rounded shadow-sm text-xs sm:text-sm inline mx-0.5 select-all font-sans">
-          {part}
-        </strong>
-      );
-    }
-    return part;
-  });
+  const html = convertMarkdownToRichHtml(text);
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
 };
 
 export const ModuleBase: React.FC<ModuleBaseProps> = ({ 
@@ -823,17 +815,11 @@ export const ModuleBase: React.FC<ModuleBaseProps> = ({
                   </div>
                 )}
 
-                {!currentPage.isSheet && (
-                  currentPage.content && /<[a-z][\s\S]*>/i.test(currentPage.content) ? (
-                    <div 
-                      className="prose prose-slate max-w-none text-slate-800 leading-relaxed font-sans"
-                      dangerouslySetInnerHTML={{ __html: currentPage.content }}
-                    />
-                  ) : (
-                    <div className="prose prose-slate max-w-none text-slate-700 whitespace-pre-line font-medium leading-relaxed text-justify">
-                      {renderFormattedText(currentPage.content)}
-                    </div>
-                  )
+                {!currentPage.isSheet && currentPage.content && (
+                  <div 
+                    className="prose prose-slate max-w-none text-slate-800 leading-relaxed font-sans text-justify text-sm sm:text-base [&_strong]:font-extrabold [&_strong]:text-slate-900 [&_em]:italic [&_h1]:text-2xl [&_h1]:font-black [&_h2]:text-xl [&_h2]:font-bold [&_h3]:text-lg [&_h3]:font-bold [&_p]:my-2.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:bg-emerald-50/40 [&_blockquote]:py-1.5 [&_blockquote]:rounded-r-xl [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-xl [&_img]:shadow-md [&_img]:my-3"
+                    dangerouslySetInnerHTML={{ __html: convertMarkdownToRichHtml(currentPage.content) }}
+                  />
                 )}
 
                 {currentPage.imageUrl && (
