@@ -11,6 +11,7 @@ interface HomeProps {
   onOpenThemeEditor: () => void;
   onLogout: () => void;
   onOpenAdmin?: () => void;
+  onOpenSync?: () => void;
   isTeacher?: boolean;
   settings?: AppSettings;
 }
@@ -25,6 +26,7 @@ export const Home: React.FC<HomeProps> = ({
   onOpenThemeEditor, 
   onLogout,
   onOpenAdmin,
+  onOpenSync,
   isTeacher,
   settings
 }) => {
@@ -116,6 +118,16 @@ export const Home: React.FC<HomeProps> = ({
               >
                 <Icons.Palette size={14} />
                 <span>UBAH WARNA</span>
+              </button>
+            )}
+            {onOpenSync && (
+              <button 
+                onClick={onOpenSync}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-[10px] md:text-xs font-black uppercase text-white tracking-widest rounded-xl border border-emerald-400 shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                title="Cek pembaruan modul & hemat kuota"
+              >
+                <Icons.CloudDownload size={14} />
+                <span>SINKRONKAN</span>
               </button>
             )}
             <button 

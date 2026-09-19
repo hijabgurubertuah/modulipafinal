@@ -39,6 +39,8 @@ import { googleFormService } from './services/googleFormService';
 import { Rekap } from './components/Rekap';
 import { AdminDashboard } from './components/AdminDashboard';
 import { firestoreService } from './services/firestoreService';
+import { syncService } from './services/syncService';
+import { SyncDialog } from './components/SyncDialog';
 import { AppModule, AppSettings } from './types';
 import { DEFAULT_SETTINGS, getDefaultModules } from './services/defaultData';
 import { normalizeImageUrl } from './utils/imageUrlHelper';
@@ -60,6 +62,7 @@ const App = () => {
   const [showThemeEditor, setShowThemeEditor] = useState<boolean>(false);
   const [showAbout, setShowAbout] = useState<boolean>(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
+  const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
   const [logoError, setLogoError] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showSearch, setShowSearch] = useState<boolean>(false);
@@ -69,22 +72,27 @@ const App = () => {
 
   useEffect(() => {
     let isMounted = true;
-    firestoreService.getSettings().then(st => {
-      if (isMounted && st) {
-        setSettings(st);
-      }
-    }).catch(err => console.error('Error fetching settings in App:', err));
-    return () => { isMounted = false; };
-  }, [isLoggedIn, currentView]);
+    const reloadData = () => {
+      firestoreService.getSettings().then(st => {
+        if (isMounted && st) setSettings(st);
+      }).catch(() => {});
+      
+      firestoreService.getModules().then(mods => {
+        if (isMounted && mods) setModules(mods);
+      }).catch(() => {});
+    };
 
-  useEffect(() => {
-    let isMounted = true;
-    firestoreService.getModules().then(mods => {
-      if (isMounted) {
-        setModules(mods);
-      }
-    }).catch(err => console.error('Error fetching modules:', err));
-    return () => { isMounted = false; };
+    reloadData();
+
+    const handleSyncEvent = () => {
+      reloadData();
+    };
+
+    window.addEventListener(syncService.SYNC_EVENT_NAME, handleSyncEvent);
+    return () => { 
+      isMounted = false; 
+      window.removeEventListener(syncService.SYNC_EVENT_NAME, handleSyncEvent);
+    };
   }, [isLoggedIn, currentView]);
   
   // Progress State
@@ -627,6 +635,27 @@ const App = () => {
             </div>
           </div>
 
+          {/* Tombol Sinkronkan Materi (Offline First / Cek Perubahan) */}
+          <button 
+            id="sidebar-sync-button"
+            onClick={() => {
+              setShowSyncModal(true);
+              setSidebarOpen(false);
+            }}
+            className="w-full mb-2 py-2 px-3 rounded-xl flex items-center justify-between transition-all font-bold text-xs bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 hover:shadow-md active:scale-95 cursor-pointer group"
+            title="Sinkronkan materi dan cek pembaruan cloud"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
+                <Icons.CloudDownload size={13} />
+              </div>
+              <span className="text-[11px] font-black uppercase tracking-wider">Sinkronkan</span>
+            </div>
+            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Offline Mode
+            </span>
+          </button>
+
           {/* Tombol Panel Admin / Guru - HANYA MUNCUL JIKA USERNAME gurusmp */}
           {isTeacher && (
             <button 
@@ -904,6 +933,7 @@ const App = () => {
                   setSidebarOpen={setSidebarOpen} 
                   onOpenThemeEditor={() => setShowThemeEditor(true)}
                   onLogout={() => setShowLogoutConfirm(true)}
+                  onOpenSync={() => setShowSyncModal(true)}
                   isTeacher={isTeacher}
                   onOpenAdmin={isTeacher ? () => setCurrentView('admin') : undefined}
                 />
@@ -1340,6 +1370,12 @@ const App = () => {
           </div>
         </div>
       </Dialog>
+
+      {/* Sync Dialog */}
+      <SyncDialog
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+      />
     </div>
   );
 };

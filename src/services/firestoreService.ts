@@ -34,6 +34,7 @@ import {
   DEFAULT_SETTINGS 
 } from './defaultData';
 import { GAME_TEMPLATES } from '../utils/gameTemplates';
+import { recordMetric } from './firestoreMetrics';
 
 const LOCAL_STORAGE_PREFIX = 'ipa_firestore_cache_';
 
@@ -112,40 +113,26 @@ export const firestoreService = {
     return getDefaultModules();
   },
 
-  // --- MODULES CRUD (Instant SWR Cache) ---
+  // --- MODULES CRUD (Strict 100% Local-First / Zero Read Cost) ---
   getModules: async (): Promise<AppModule[]> => {
     const cachedGames = getSafeCached<GameItem[]>('games') || getDefaultGames();
 
-    // 1. Return cached instantly if available (<1ms)
+    // 1. Return cached immediately (<1ms, 0 Firestore Read)
     const cachedMods = getSafeCached<AppModule[]>('modules');
     const isInit = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}modules_init`);
     if (cachedMods && (cachedMods.length > 0 || isInit === 'true')) {
-      // Trigger background silent revalidation without blocking
-      setTimeout(() => {
-        firestoreService.fetchRemoteModules().catch(() => {});
-      }, 50);
-
       return cachedMods.map((m: AppModule) => ({
         ...m,
         pages: hydrateModulePages(m.pages, cachedGames)
       }));
     }
 
-    // 2. No cache yet: try fetching from Firestore with snappy timeout
-    try {
-      const remote = await firestoreService.fetchRemoteModules();
-      if (remote && remote.length > 0) {
-        return remote;
-      }
-    } catch {}
-
-    // 3. Fallback to default rich modules instantly
+    // 2. First-time initialization: fallback to rich default modules immediately
     const defaultMods = getDefaultModules().map(m => ({
       ...m,
       pages: hydrateModulePages(m.pages, cachedGames)
     }));
     setSafeCached('modules', defaultMods);
-    firestoreService.syncLocalModulesToCloud(defaultMods).catch(() => {});
     return defaultMods;
   },
 
@@ -153,7 +140,8 @@ export const firestoreService = {
     const cachedGames = getSafeCached<GameItem[]>('games') || getDefaultGames();
     const colRef = collection(db, 'modules');
     const q = query(colRef);
-    const snap = await withTimeout(getDocs(q), 4000);
+    const snap = await withTimeout(getDocs(q), 5000);
+    recordMetric('read', Math.max(1, snap.size));
     
     if (!snap.empty) {
       const modules: AppModule[] = [];
@@ -182,35 +170,21 @@ export const firestoreService = {
   },
 
   getModuleById: async (moduleId: number): Promise<AppModule | null> => {
-    let gamesList: GameItem[] = [];
-    try {
-      gamesList = await firestoreService.getGames();
-    } catch {}
+    const gamesList = getSafeCached<GameItem[]>('games') || getDefaultGames();
 
-    try {
-      const docRef = doc(db, 'modules', `mod_${moduleId}`);
-      const snap = await withTimeout(getDoc(docRef), 6000);
-      if (snap.exists()) {
-        const mod = snap.data() as AppModule;
+    // 1. Instant check from local cache (0 Firestore Read)
+    const cachedModules = getSafeCached<AppModule[]>('modules');
+    if (cachedModules && Array.isArray(cachedModules)) {
+      const found = cachedModules.find(m => m.id === moduleId);
+      if (found) {
         return {
-          ...mod,
-          pages: hydrateModulePages(mod.pages, gamesList)
+          ...found,
+          pages: hydrateModulePages(found.pages, gamesList)
         };
       }
-    } catch (e) {
-      console.warn(`Firestore getModuleById(${moduleId}) fallback used:`, e);
     }
 
-    // Fallback
-    const modules = await firestoreService.getModules();
-    const found = modules.find(m => m.id === moduleId);
-    if (found) {
-      return {
-        ...found,
-        pages: hydrateModulePages(found.pages, gamesList)
-      };
-    }
-
+    // 2. Check defaults
     const defMod = getDefaultModules().find(m => m.id === moduleId);
     if (defMod) {
       return {
@@ -218,6 +192,7 @@ export const firestoreService = {
         pages: hydrateModulePages(defMod.pages, gamesList)
       };
     }
+
     return null;
   },
 
@@ -251,6 +226,7 @@ export const firestoreService = {
     try {
       const docRef = doc(db, 'modules', `mod_${cleanPayload.id}`);
       await withTimeout(setDoc(docRef, cleanPayload, { merge: true }), 15000);
+      recordMetric('write', 1, JSON.stringify(cleanPayload).length);
     } catch (e) {
       console.warn(`Firestore saveModule background warning:`, e);
     }
@@ -352,34 +328,25 @@ export const firestoreService = {
     } catch {}
   },
 
-  // --- QUIZZES CRUD (Instant SWR Cache) ---
+  // --- QUIZZES CRUD (Strict 100% Local-First / Zero Read Cost) ---
   getQuizzes: async (): Promise<QuizConfig[]> => {
-    // 1. Return cached instantly if available (<1ms)
+    // 1. Return cached immediately (<1ms, 0 Firestore Read)
     const cached = getSafeCached<QuizConfig[]>('quizzes');
     const isInit = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}quizzes_init`);
     if (cached && (cached.length > 0 || isInit === 'true')) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteQuizzes().catch(() => {});
-      }, 50);
       return cached;
     }
 
-    // 2. Fetch remote if no cache
-    try {
-      const remote = await firestoreService.fetchRemoteQuizzes();
-      if (remote && remote.length > 0) return remote;
-    } catch {}
-
-    // 3. Fallback default
+    // 2. Fallback default
     const defaultQz = getDefaultQuizzes();
     setSafeCached('quizzes', defaultQz);
-    firestoreService.syncLocalQuizzesToCloud(defaultQz).catch(() => {});
     return defaultQz;
   },
 
   fetchRemoteQuizzes: async (): Promise<QuizConfig[]> => {
     const colRef = collection(db, 'quizzes');
-    const snap = await withTimeout(getDocs(colRef), 3500);
+    const snap = await withTimeout(getDocs(colRef), 4000);
+    recordMetric('read', Math.max(1, snap.size));
     if (!snap.empty) {
       const quizzes: QuizConfig[] = [];
       snap.forEach(docSnap => {
@@ -405,29 +372,12 @@ export const firestoreService = {
   },
 
   getQuizByModule: async (moduleNumber: number): Promise<QuizConfig | null> => {
-    // 1. Instant check from cached quizzes
+    // 1. Instant check from cached quizzes (0 Firestore Read)
     const cached = getSafeCached<QuizConfig[]>('quizzes');
     const foundCached = cached?.find(q => q.moduleNumber === moduleNumber);
     if (foundCached && foundCached.questions && foundCached.questions.length > 0) {
       return foundCached;
     }
-
-    try {
-      const docRef = doc(db, 'quizzes', `quiz_${moduleNumber}`);
-      const snap = await withTimeout(getDoc(docRef), 2500);
-      if (snap.exists()) {
-        const qz = snap.data() as QuizConfig;
-        if (qz && qz.questions && qz.questions.length > 0) {
-          return qz;
-        }
-      }
-    } catch (e) {
-      console.warn(`Firestore getQuizByModule(${moduleNumber}) fallback used:`, e);
-    }
-
-    const quizzes = await firestoreService.getQuizzes();
-    const found = quizzes.find(q => q.moduleNumber === moduleNumber);
-    if (found && found.questions && found.questions.length > 0) return found;
 
     return getDefaultQuizzes().find(q => q.moduleNumber === moduleNumber) || null;
   },
@@ -447,6 +397,7 @@ export const firestoreService = {
     try {
       const docRef = doc(db, 'quizzes', `quiz_${quizData.moduleNumber}`);
       await withTimeout(setDoc(docRef, quizData, { merge: true }), 10000);
+      recordMetric('write', 1, JSON.stringify(quizData).length);
     } catch (e) {
       console.warn('Firestore saveQuiz background warning:', e);
     }
@@ -467,33 +418,24 @@ export const firestoreService = {
     }
   },
 
-  // --- GAMES CRUD (Instant SWR Cache) ---
+  // --- GAMES CRUD (Strict 100% Local-First / Zero Read Cost) ---
   getGames: async (): Promise<GameItem[]> => {
-    // 1. Instant cache return
+    // 1. Instant cache return (0 Firestore Read)
     const cached = getSafeCached<GameItem[]>('games');
     if (cached && cached.length > 0) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteGames().catch(() => {});
-      }, 50);
       return cached;
     }
 
-    // 2. Fetch remote if no cache
-    try {
-      const remote = await firestoreService.fetchRemoteGames();
-      if (remote && remote.length > 0) return remote;
-    } catch {}
-
-    // 3. Fallback default
+    // 2. Fallback default
     const defaultGames = getDefaultGames();
     setSafeCached('games', defaultGames);
-    firestoreService.syncLocalGamesToCloud(defaultGames).catch(() => {});
     return defaultGames;
   },
 
   fetchRemoteGames: async (): Promise<GameItem[]> => {
     const colRef = collection(db, 'games');
-    const snap = await withTimeout(getDocs(colRef), 3500);
+    const snap = await withTimeout(getDocs(colRef), 4000);
+    recordMetric('read', Math.max(1, snap.size));
     if (!snap.empty) {
       const games: GameItem[] = [];
       snap.forEach(docSnap => {
@@ -526,18 +468,7 @@ export const firestoreService = {
     const foundCached = cached?.find(g => g.id === gameId);
     if (foundCached) return foundCached;
 
-    try {
-      const docRef = doc(db, 'games', gameId);
-      const snap = await withTimeout(getDoc(docRef), 2500);
-      if (snap.exists()) {
-        return { id: snap.id, ...(snap.data() as any) };
-      }
-    } catch (e) {
-      console.warn(`Firestore getGameById(${gameId}) fallback:`, e);
-    }
-
-    const games = await firestoreService.getGames();
-    return games.find(g => g.id === gameId) || null;
+    return getDefaultGames().find(g => g.id === gameId) || null;
   },
 
   saveGame: async (game: GameItem): Promise<void> => {
@@ -674,31 +605,22 @@ export const firestoreService = {
     } catch {}
   },
 
-  // --- STUDENTS & LOGINS CRUD (Instant SWR Cache) ---
+  // --- STUDENTS & LOGINS CRUD (Strict 100% Local-First / Zero Read Cost) ---
   getStudents: async (userClass?: string): Promise<StudentItem[]> => {
-    // 1. Instant cache return (<1ms)
+    // 1. Instant cache return (<1ms, 0 Firestore Read)
     const cached = getSafeCached<StudentItem[]>('students');
     if (cached && Array.isArray(cached)) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteStudents().catch(() => {});
-      }, 50);
       if (userClass) return cached.filter(s => s.userClass && s.userClass.toUpperCase() === userClass.toUpperCase());
       return cached;
     }
-
-    // 2. Fetch remote if no cache
-    try {
-      const remote = await firestoreService.fetchRemoteStudents();
-      if (userClass) return remote.filter(s => s.userClass && s.userClass.toUpperCase() === userClass.toUpperCase());
-      return remote;
-    } catch {}
 
     return [];
   },
 
   fetchRemoteStudents: async (): Promise<StudentItem[]> => {
     const colRef = collection(db, 'students');
-    const snap = await withTimeout(getDocs(colRef), 3500);
+    const snap = await withTimeout(getDocs(colRef), 4000);
+    recordMetric('read', Math.max(1, snap.size));
     if (!snap.empty) {
       const students: StudentItem[] = [];
       snap.forEach(docSnap => {
@@ -739,6 +661,7 @@ export const firestoreService = {
     try {
       const docRef = doc(db, 'students', id);
       await withTimeout(setDoc(docRef, payload, { merge: true }), 8000);
+      recordMetric('write', 1, JSON.stringify(payload).length);
     } catch (e) {
       console.warn('Firestore saveStudent failed:', e);
     }
@@ -767,20 +690,20 @@ export const firestoreService = {
     } catch {}
   },
 
-  // Record login event (without auto-creating unregistered students)
+  // Record login event (without auto-creating unregistered students or doing heavy Firestore reads)
   recordStudentLogin: async (name: string, userClass: string): Promise<void> => {
     const timestamp = new Date().toLocaleString('id-ID');
     
-    // Only update lastLogin if student is already registered
+    // Update local cached student lastLogin if found
     try {
-      const allStudents = await firestoreService.getStudents();
-      const existing = allStudents.find(s => 
+      const cached = getSafeCached<StudentItem[]>('students') || [];
+      const existing = cached.find(s => 
         s.name.trim().toUpperCase() === name.trim().toUpperCase() &&
         s.userClass.trim().toUpperCase() === userClass.trim().toUpperCase()
       );
       if (existing) {
-        const docRef = doc(db, 'students', existing.id);
-        withTimeout(setDoc(docRef, { lastLogin: timestamp }, { merge: true }), 4000).catch(() => {});
+        existing.lastLogin = timestamp;
+        setSafeCached('students', cached);
       }
     } catch (err) {
       console.warn('Update student lastLogin note:', err);
@@ -795,31 +718,22 @@ export const firestoreService = {
     }).catch(() => {});
   },
 
-  // --- SCORES / NILAI CRUD (Instant SWR Cache) ---
+  // --- SCORES / NILAI CRUD (Strict 100% Local-First / Zero Read Cost) ---
   getScores: async (filterClass?: string): Promise<ScoreRecord[]> => {
-    // 1. Instant cache return (<1ms)
+    // 1. Instant cache return (<1ms, 0 Firestore Read)
     const cached = getSafeCached<ScoreRecord[]>('scores');
     if (cached && Array.isArray(cached)) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteScores().catch(() => {});
-      }, 50);
       if (filterClass) return cached.filter(s => s.userClass === filterClass);
       return cached;
     }
-
-    // 2. Fetch remote
-    try {
-      const remote = await firestoreService.fetchRemoteScores();
-      if (filterClass) return remote.filter(s => s.userClass === filterClass);
-      return remote;
-    } catch {}
 
     return [];
   },
 
   fetchRemoteScores: async (): Promise<ScoreRecord[]> => {
     const colRef = collection(db, 'scores');
-    const snap = await withTimeout(getDocs(colRef), 3500);
+    const snap = await withTimeout(getDocs(colRef), 4000);
+    recordMetric('read', Math.max(1, snap.size));
     if (!snap.empty) {
       const scores: ScoreRecord[] = [];
       snap.forEach(docSnap => {
@@ -830,6 +744,12 @@ export const firestoreService = {
       return scores;
     }
     return [];
+  },
+
+  saveScoreDirectToCloud: async (score: ScoreRecord): Promise<void> => {
+    const docRef = doc(db, 'scores', score.id);
+    await withTimeout(setDoc(docRef, score), 8000);
+    recordMetric('write', 1, JSON.stringify(score).length);
   },
 
   saveScore: async (scoreData: Omit<ScoreRecord, 'id'>): Promise<string> => {
@@ -848,11 +768,32 @@ export const firestoreService = {
     // 2. Save to Firestore asynchronously
     try {
       const docRef = doc(db, 'scores', id);
-      withTimeout(setDoc(docRef, payload), 8000).catch(err => {
-        console.warn('Firestore async saveScore error:', err);
-      });
+      withTimeout(setDoc(docRef, payload), 8000)
+        .then(() => {
+          recordMetric('write', 1, JSON.stringify(payload).length);
+        })
+        .catch(err => {
+          console.warn('Firestore async saveScore error, queued to offline pending:', err);
+          try {
+            // Lazy import queue to prevent circular references
+            const rawQueue = localStorage.getItem('ipa_pending_scores_queue');
+            const queue: ScoreRecord[] = rawQueue ? JSON.parse(rawQueue) : [];
+            if (!queue.find(q => q.id === payload.id)) {
+              queue.push(payload);
+              localStorage.setItem('ipa_pending_scores_queue', JSON.stringify(queue));
+            }
+          } catch {}
+        });
     } catch (e) {
-      console.warn('Firestore saveScore failed:', e);
+      console.warn('Firestore saveScore failed, queued to offline pending:', e);
+      try {
+        const rawQueue = localStorage.getItem('ipa_pending_scores_queue');
+        const queue: ScoreRecord[] = rawQueue ? JSON.parse(rawQueue) : [];
+        if (!queue.find(q => q.id === payload.id)) {
+          queue.push(payload);
+          localStorage.setItem('ipa_pending_scores_queue', JSON.stringify(queue));
+        }
+      } catch {}
     }
 
     // Also record activity log
@@ -907,27 +848,20 @@ export const firestoreService = {
     }
   },
 
-  // --- ACTIVITY LOGS (Instant SWR Cache) ---
+  // --- ACTIVITY LOGS (Strict 100% Local-First / Zero Read Cost) ---
   getActivityLogs: async (limitCount = 100): Promise<ActivityLog[]> => {
     const cached = getSafeCached<ActivityLog[]>('activity_logs');
     if (cached && Array.isArray(cached)) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteActivityLogs(limitCount).catch(() => {});
-      }, 50);
       return cached.slice(0, limitCount);
     }
-
-    try {
-      const remote = await firestoreService.fetchRemoteActivityLogs(limitCount);
-      return remote;
-    } catch {}
 
     return [];
   },
 
   fetchRemoteActivityLogs: async (limitCount = 100): Promise<ActivityLog[]> => {
     const colRef = collection(db, 'activity_logs');
-    const snap = await withTimeout(getDocs(colRef), 3500);
+    const snap = await withTimeout(getDocs(colRef), 4000);
+    recordMetric('read', Math.max(1, snap.size));
     if (!snap.empty) {
       const logs: ActivityLog[] = [];
       snap.forEach(docSnap => {
@@ -958,7 +892,7 @@ export const firestoreService = {
     }
   },
 
-  // --- APP SETTINGS (Instant SWR Cache) ---
+  // --- APP SETTINGS (Strict 100% Local-First / Zero Read Cost) ---
   getSettingsSync: (): AppSettings => {
     const cached = getSafeCached<AppSettings>('settings');
     return cached || DEFAULT_SETTINGS;
@@ -967,23 +901,16 @@ export const firestoreService = {
   getSettings: async (): Promise<AppSettings> => {
     const cached = getSafeCached<AppSettings>('settings');
     if (cached) {
-      setTimeout(() => {
-        firestoreService.fetchRemoteSettings().catch(() => {});
-      }, 50);
       return cached;
     }
-
-    try {
-      const remote = await firestoreService.fetchRemoteSettings();
-      if (remote) return remote;
-    } catch {}
 
     return DEFAULT_SETTINGS;
   },
 
   fetchRemoteSettings: async (): Promise<AppSettings | null> => {
     const docRef = doc(db, 'settings', 'general');
-    const snap = await withTimeout(getDoc(docRef), 10000);
+    const snap = await withTimeout(getDoc(docRef), 8000);
+    recordMetric('read', 1);
     if (snap.exists()) {
       const settings = snap.data() as AppSettings;
       setSafeCached('settings', settings);

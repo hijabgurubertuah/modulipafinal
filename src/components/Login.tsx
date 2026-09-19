@@ -6,8 +6,6 @@ import {
   School,
   Loader2,
   RefreshCw,
-  Edit2,
-  List,
   AlertTriangle
 } from 'lucide-react';
 import { GardenDecorations } from './GardenDecorations';
@@ -36,8 +34,13 @@ export const Login: React.FC<LoginProps> = ({
   settings
 }) => {
   const logoUrl = settings?.logoUrl || "https://i.ibb.co.com/kVLW5n61/logo-smpn-1-bengkalis-kecil-Copy.png";
-  const welcomeTitle = settings?.homeWelcomeTitle || "Selamat Datang di Modul Berkebun SMPN 1 Bengkalis";
-  const quoteText = settings?.homeQuote || "“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”";
+  const loginTitle = settings?.loginTitle || settings?.homeWelcomeTitle || "Selamat Datang di Modul Berkebun SMPN 1 Bengkalis";
+  const quoteText = settings?.loginSubtitle || settings?.homeQuote || "“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”";
+  const loginBtnText = settings?.loginButtonText || "MASUK BELAJAR";
+  const loginTagline = settings?.loginTagline || "Modul Pembelajaran IPA Berkelanjutan";
+  const schoolName = settings?.schoolName || "SMP NEGERI 1 BENGKALIS";
+  const showQuote = settings?.showLoginQuote !== false;
+  const isLogoAnimated = settings?.showLoginLogoAnimation !== false;
 
   // Dynamic states for Spreadsheet / DB loaded data initialized immediately from local browser cache
   const [classes, setClasses] = useState<ClassItem[]>(() => {
@@ -175,8 +178,8 @@ export const Login: React.FC<LoginProps> = ({
           {/* Header Title & Animated Logo */}
           <div className="flex flex-col items-center gap-3 mb-3">
             <motion.div
-              animate={{ rotateY: 360 }}
-              transition={{ duration: 14, repeat: Infinity, ease: "linear" }}
+              animate={isLogoAnimated ? { rotateY: 360 } : { rotateY: 0 }}
+              transition={isLogoAnimated ? { duration: 14, repeat: Infinity, ease: "linear" } : undefined}
               style={{ perspective: 1000 }}
             >
               <img 
@@ -187,23 +190,25 @@ export const Login: React.FC<LoginProps> = ({
               />
             </motion.div>
             <h1 id="hero-title" className="text-xl md:text-3xl font-black leading-tight whitespace-pre-line" style={{ fontFamily: "'Playfair Display', serif", color: '#f3e8ff' }}>
-              {welcomeTitle}
+              {loginTitle}
             </h1>
           </div>
 
-          {/* Decorative line */}
-          <div className="flex items-center gap-3 my-1.5">
-            <div style={{ background: '#d8b4fe', height: '2px', width: '40px', borderRadius: '2px' }}></div>
-            <span className="text-lg">🍇</span>
-            <div style={{ background: '#d8b4fe', height: '2px', width: '40px', borderRadius: '2px' }}></div>
+          {/* Clean minimalist decorative line */}
+          <div className="flex items-center gap-2.5 my-1.5 opacity-60">
+            <div style={{ background: '#d8b4fe', height: '1.5px', width: '36px', borderRadius: '2px' }}></div>
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-300"></span>
+            <div style={{ background: '#d8b4fe', height: '1.5px', width: '36px', borderRadius: '2px' }}></div>
           </div>
 
           {/* Subtitle / Quote */}
-          <div className="space-y-1 mb-2">
-            <p id="hero-subtitle" className="text-sm md:text-base max-w-md leading-relaxed mx-auto italic" style={{ color: '#d8b4fe', opacity: 0.9 }}>
-              {quoteText}
-            </p>
-          </div>
+          {showQuote && quoteText && (
+            <div className="space-y-1 mb-2">
+              <p id="hero-subtitle" className="text-sm md:text-base max-w-md leading-relaxed mx-auto italic" style={{ color: '#d8b4fe', opacity: 0.9 }}>
+                {quoteText}
+              </p>
+            </div>
+          )}
 
           {/* Loading Indicator */}
           {loading ? (
@@ -268,26 +273,6 @@ export const Login: React.FC<LoginProps> = ({
                       <User size={13} className="text-purple-300" />
                       Nama Siswa:
                     </span>
-                    {userClass && userClass !== 'TAMU' && filteredStudents.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setInputMode(inputMode === 'select' ? 'manual' : 'select')}
-                        className="text-[10px] text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer font-bold select-none opacity-80 hover:opacity-100"
-                        title={inputMode === 'select' ? "Ketik manual" : "Pilih dari daftar"}
-                      >
-                        {inputMode === 'select' ? (
-                          <>
-                            <Edit2 size={10} />
-                            <span>Ketik Manual</span>
-                          </>
-                        ) : (
-                          <>
-                            <List size={10} />
-                            <span>Pilih Daftar</span>
-                          </>
-                        )}
-                      </button>
-                    )}
                   </label>
 
                   <div className="relative">
@@ -339,18 +324,18 @@ export const Login: React.FC<LoginProps> = ({
                   className="btn-garden pulse-glow inline-flex items-center justify-center gap-2.5 px-8 py-3.5 md:py-4 rounded-2xl text-lg md:text-xl font-bold tracking-wide mt-2 shadow-xl hover:brightness-110 active:scale-98 transition-all cursor-pointer bg-gradient-to-r from-purple-500 to-purple-700 text-white shadow-purple-600/30"
                   style={{ border: 'none' }}
                 > 
-                  <span>MASUK BELAJAR</span> 
+                  <span>{loginBtnText}</span> 
                 </button>
               </form>
             </div>
           )}
 
-          {/* Tagline */}
-          <p id="tagline" className="mt-5 text-xs md:text-sm tracking-widest uppercase" style={{ color: '#d8b4fe', opacity: 0.7 }}>
-            🍇 Modul Pembelajaran IPA Berkelanjutan 🍇
+          {/* Tagline & School Name (Minimalist, without fruit emojis) */}
+          <p id="tagline" className="mt-5 text-xs md:text-sm tracking-widest uppercase font-semibold" style={{ color: '#d8b4fe', opacity: 0.8 }}>
+            {loginTagline}
           </p>
-          <p className="mt-1 text-[10px] font-bold tracking-wide" style={{ color: '#d8b4fe', opacity: 0.85 }}>
-            SMP NEGERI 1 BENGKALIS
+          <p className="mt-1 text-[10px] font-bold tracking-wider uppercase" style={{ color: '#d8b4fe', opacity: 0.85 }}>
+            {schoolName}
           </p>
         </div>
       </main>

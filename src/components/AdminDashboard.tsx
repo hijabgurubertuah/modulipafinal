@@ -58,7 +58,9 @@ import {
   CheckSquare,
   Square,
   CheckCheck,
-  Loader2
+  Loader2,
+  Flame,
+  LogIn
 } from 'lucide-react';
 import { 
   AppModule, 
@@ -81,9 +83,11 @@ import { IconComponent } from './IconComponent';
 import { VideoPlayer, getCleanVideoEmbedUrl } from './VideoPlayer';
 import { CustomGameRenderer } from './CustomGameRenderer';
 import { AdminGameManager } from './AdminGameManager';
+import { FirebaseUsageDashboard } from './FirebaseUsageDashboard';
 import { GAME_TEMPLATES } from '../utils/gameTemplates';
 import { compressImage } from '../utils/imageCompressor';
 import { normalizeImageUrl, testImageLoad } from '../utils/imageUrlHelper';
+import { SyncDialog } from './SyncDialog';
 
 interface AdminDashboardProps {
   onBackToStudentView: (targetModule?: number) => void;
@@ -96,7 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   // --- Navigation Tab State ---
   const [activeTab, setActiveTab] = useState<
-    'materi' | 'kuis' | 'game' | 'kelas' | 'siswa' | 'nilai' | 'log' | 'spreadsheet' | 'pengaturan'
+    'materi' | 'kuis' | 'game' | 'kelas' | 'siswa' | 'nilai' | 'log' | 'spreadsheet' | 'pengaturan' | 'firebase'
   >('materi');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
@@ -117,6 +121,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [loading, setLoading] = useState<boolean>(true);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   // --- Module Editing State ---
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
@@ -1430,6 +1435,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleSaveTabSettings = async (tabName: 'Logo' | 'Sidebar' | 'Home' | 'Umum') => {
+    if (isSavingSettings) return;
+    setIsSavingSettings(true);
+    try {
+      let latestSettings = { ...settings };
+      if (tabName === 'Logo' && logoUrlInput.trim() && logoUrlInput !== settings.logoUrl && !logoUrlInput.startsWith('data:image')) {
+        const normalized = normalizeImageUrl(logoUrlInput.trim());
+        latestSettings.logoUrl = normalized;
+        setSettings(latestSettings);
+      }
+      await firestoreService.saveSettings(latestSettings);
+      showNotification(`Pengaturan ${tabName} berhasil disimpan ke Firebase!`, 'success');
+    } catch (err: any) {
+      showNotification(`Gagal menyimpan pengaturan ${tabName}: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   const handleResetSettingsToDefault = () => {
     if (!window.confirm('Kembalikan semua pengaturan logo, sidebar, dan halaman utama ke default awal?')) return;
     setSettings(DEFAULT_SETTINGS);
@@ -1539,7 +1563,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       category: 'Integrasi & Sistem',
       items: [
         { id: 'spreadsheet' as const, label: 'Login', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
-        { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' }
+        { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' },
+        { id: 'firebase' as const, label: 'Firebase', icon: Flame, count: undefined, color: 'text-amber-600' }
       ]
     }
   ];
@@ -1677,18 +1702,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* --- TOP ADMIN HEADER --- */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+      {/* --- TOP ADMIN HEADER (DESKTOP ONLY - TERSEMBUNYI DI HP) --- */}
+      <header className="hidden md:flex bg-white border-b border-slate-200 sticky top-0 z-30 px-4 lg:px-8 py-3.5 items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
-          {/* Mobile Menu Trigger button in Header */}
-          <button
-            onClick={() => setIsMobileSidebarOpen(true)}
-            className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 transition-colors"
-            title="Buka Menu Admin"
-          >
-            <Menu size={18} />
-          </button>
-
           <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
             👨‍🏫
           </div>
@@ -1706,6 +1722,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {settings.schoolName || 'Modul Pembelajaran Digital'}
             </p>
           </div>
+        </div>
+
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsSyncModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-xs"
+            title="Sinkronisasi offline & cek pembaruan"
+          >
+            <Cloud size={14} className="text-emerald-600" />
+            <span>Sinkronkan Data</span>
+          </button>
+
+          <button
+            onClick={() => onBackToStudentView()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            <Eye size={14} />
+            <span>Tampilan Siswa</span>
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            <LogOut size={14} />
+            <span>Keluar</span>
+          </button>
         </div>
       </header>
 
@@ -3096,93 +3140,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* ========================================================================= */}
               {activeTab === 'pengaturan' && (
                 <div className="space-y-6 max-w-4xl">
-                  {/* Settings Header */}
-                  <div className="pb-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900">Pengaturan Tampilan & Sistem</h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Kustomisasi logo sekolah, menu sidebar, tampilan halaman utama, dan keamanan aplikasi.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleResetSettingsToDefault}
-                        disabled={isSavingSettings}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300 disabled:opacity-50"
-                        title="Kembalikan semua nilai ke bawaan awal"
-                      >
-                        <RotateCcw size={13} />
-                        <span>Reset Default</span>
-                      </button>
-                      <button
-                        onClick={handleSaveSettings}
-                        disabled={isSavingSettings}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        {isSavingSettings ? (
-                          <>
-                            <Loader2 size={15} className="animate-spin" />
-                            <span>Sedang Menyimpan...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Save size={15} />
-                            <span>Simpan Pengaturan</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
                   {/* Sub-Tab Navigation */}
-                  <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
+                  <div className="grid grid-cols-4 gap-1 sm:gap-2 p-1 bg-slate-100 rounded-2xl border border-slate-200">
                     <button
                       onClick={() => setSettingsSubTab('branding')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`py-2 px-1 sm:px-3 rounded-xl text-xs font-bold transition-all text-center justify-center flex items-center ${
                         settingsSubTab === 'branding'
                           ? 'bg-white text-emerald-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                       }`}
                     >
-                      <ImageIcon size={14} />
-                      <span>1. Logo & Branding</span>
+                      <span>Logo</span>
                     </button>
                     <button
                       onClick={() => setSettingsSubTab('sidebar')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`py-2 px-1 sm:px-3 rounded-xl text-xs font-bold transition-all text-center justify-center flex items-center ${
                         settingsSubTab === 'sidebar'
                           ? 'bg-white text-emerald-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                       }`}
                     >
-                      <PanelLeft size={14} />
-                      <span>2. Menu Sidebar</span>
+                      <span>Sidebar</span>
                     </button>
                     <button
                       onClick={() => setSettingsSubTab('home')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`py-2 px-1 sm:px-3 rounded-xl text-xs font-bold transition-all text-center justify-center flex items-center ${
                         settingsSubTab === 'home'
                           ? 'bg-white text-emerald-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                       }`}
                     >
-                      <HomeIcon size={14} />
-                      <span>3. Halaman Utama (Home)</span>
+                      <span>Home</span>
                     </button>
                     <button
                       onClick={() => setSettingsSubTab('general')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`py-2 px-1 sm:px-3 rounded-xl text-xs font-bold transition-all text-center justify-center flex items-center ${
                         settingsSubTab === 'general'
                           ? 'bg-white text-emerald-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                       }`}
                     >
-                      <Sliders size={14} />
-                      <span>4. Umum & Keamanan</span>
+                      <span>Umum</span>
                     </button>
                   </div>
 
-                  {/* --- SUB-TAB 1: LOGO & BRANDING --- */}
+                  {/* --- SUB-TAB 1: LOGO --- */}
                   {settingsSubTab === 'branding' && (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -3275,7 +3277,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* URL Help & Feedback message */}
-                            {logoUrlFeedback.message ? (
+                            {logoUrlFeedback.message && (
                               <div className={`mt-2 p-2.5 rounded-xl text-xs flex items-start gap-2 ${
                                 logoUrlFeedback.status === 'valid' 
                                   ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
@@ -3286,10 +3288,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <Info size={14} className="shrink-0 mt-0.5" />
                                 <div>{logoUrlFeedback.message}</div>
                               </div>
-                            ) : (
-                              <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                                💡 <strong>Tips Link:</strong> Mendukung link langsung (PNG/JPG/SVG), <strong>Google Drive</strong> (otomatis dikonversi ke direct image), <strong>Dropbox</strong>, dan <strong>ImgBB</strong>. Pastikan link dapat diakses publik.
-                              </p>
                             )}
                           </div>
 
@@ -3355,35 +3353,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 onChange={e => setSettings({ ...settings, logoAnimation: e.target.checked })}
                                 className="w-4 h-4 text-emerald-600 rounded-sm focus:ring-emerald-500 border-slate-300"
                               />
-                              <div>
-                                <span className="text-xs font-bold text-slate-800">
-                                  Aktifkan Animasi Putar 3D (3D Spinning Animation)
-                                </span>
-                                <p className="text-[11px] text-slate-500">
-                                  Logo akan berputar mulus secara kontinu di halaman login, home, dan header.
-                                </p>
-                              </div>
+                              <span className="text-xs font-bold text-slate-800">
+                                Putar logo
+                              </span>
                             </label>
+                          </div>
+
+                          {/* Tombol Simpan Khusus Tab Logo */}
+                          <div className="pt-4 border-t border-slate-200 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveTabSettings('Logo')}
+                              disabled={isSavingSettings}
+                              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                            >
+                              {isSavingSettings ? (
+                                <>
+                                  <Loader2 size={14} className="animate-spin" />
+                                  <span>Menyimpan...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Save size={14} />
+                                  <span>Simpan</span>
+                                </>
+                              )}
+                            </button>
                           </div>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* --- SUB-TAB 2: PENGATURAN SIDEBAR --- */}
+                  {/* --- SUB-TAB 2: SIDEBAR --- */}
                   {settingsSubTab === 'sidebar' && (
                     <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-5">
-                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3">
-                        <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                        <div className="text-xs text-emerald-900 leading-relaxed">
-                          <strong className="font-bold">Penyempurnaan Tampilan Sidebar Terbaru:</strong>
-                          <ul className="list-disc pl-4 mt-1 space-y-0.5 text-emerald-800">
-                            <li>Tombol <em>Daftar Nilai</em> telah dihapus dari sidebar sesuai permintaan Anda.</li>
-                            <li>Tombol <em>Keluar / Exit</em> kini berupa ikon ringkas, sehingga nama siswa mendapatkan ruang penuh dan terlihat lebih panjang tanpa terpotong.</li>
-                          </ul>
-                        </div>
-                      </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -3425,19 +3429,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl flex items-start gap-3">
-                        <ShieldCheck size={18} className="text-purple-600 shrink-0 mt-0.5" />
-                        <div className="text-xs text-purple-900 leading-relaxed">
-                          <strong className="font-bold">Keamanan & Hak Akses Panel Guru:</strong>
-                          <p className="mt-0.5 text-purple-800">
-                            Tombol <em>Panel Admin (Guru)</em> bersifat rahasia dan hanya akan muncul serta dapat diakses oleh akun Guru/Pengajar yang berwenang. Siswa biasa yang login dengan nama mereka tidak akan melihat tombol panel ini.
-                          </p>
-                        </div>
+                      {/* Tombol Simpan Khusus Tab Sidebar */}
+                      <div className="pt-4 border-t border-slate-200 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTabSettings('Sidebar')}
+                          disabled={isSavingSettings}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                        >
+                          {isSavingSettings ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Menyimpan...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} />
+                              <span>Simpan</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   )}
 
-                  {/* --- SUB-TAB 3: HALAMAN UTAMA (HOME) --- */}
+                  {/* --- SUB-TAB 3: HOME --- */}
                   {settingsSubTab === 'home' && (
                     <div className="space-y-6">
                       <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
@@ -3546,78 +3562,223 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
                           </label>
                         </div>
+
+                        {/* Tombol Simpan Khusus Tab Home */}
+                        <div className="pt-4 border-t border-slate-200 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveTabSettings('Home')}
+                            disabled={isSavingSettings}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                          >
+                            {isSavingSettings ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                <span>Menyimpan...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save size={14} />
+                                <span>Simpan</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* --- SUB-TAB 4: UMUM & KEAMANAN --- */}
+                  {/* --- SUB-TAB 4: UMUM --- */}
                   {settingsSubTab === 'general' && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">
-                          Nama Sekolah / Lembaga
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.schoolName || ''}
-                          onChange={e => setSettings({ ...settings, schoolName: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
-                        />
+                    <div className="space-y-6">
+                      {/* Bagian 1: Identitas Aplikasi & Akses Guru */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
+                        <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                          <Sliders size={16} className="text-emerald-600" />
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Identitas & Keamanan Modul</h4>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1">
+                            Nama Sekolah / Lembaga
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.schoolName || ''}
+                            onChange={e => setSettings({ ...settings, schoolName: e.target.value })}
+                            placeholder="SMPN 1 Bengkalis"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1">
+                            Judul Aplikasi Modul
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.appTitle || ''}
+                            onChange={e => setSettings({ ...settings, appTitle: e.target.value })}
+                            placeholder="Modul Belajar Berkebun IPA SMP"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1">
+                            Password Admin / Guru (Untuk Masuk Panel Ini)
+                          </label>
+                          <input
+                            type="password"
+                            value={settings.adminPassword || ''}
+                            onChange={e => setSettings({ ...settings, adminPassword: e.target.value })}
+                            placeholder="gurusmp"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-mono"
+                          />
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Gunakan kata sandi ini saat masuk ke panel melalui tombol Panel Admin.
+                          </p>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">
-                          Judul Aplikasi Modul
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.appTitle || ''}
-                          onChange={e => setSettings({ ...settings, appTitle: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
-                        />
+                      {/* Bagian 2: Pengaturan Halaman Login */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
+                        <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                          <LogIn size={16} className="text-purple-600" />
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Pengaturan Halaman Login</h4>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1">
+                            Judul Sambutan Login
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={settings.loginTitle || ''}
+                            onChange={e => setSettings({ ...settings, loginTitle: e.target.value })}
+                            placeholder="Selamat Datang di Modul Berkebun SMPN 1 Bengkalis"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1">
+                            Kata Mutiara / Kutipan Subjudul Login
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={settings.loginSubtitle || ''}
+                            onChange={e => setSettings({ ...settings, loginSubtitle: e.target.value })}
+                            placeholder="“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden italic"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-800 mb-1">
+                              Teks Tombol Masuk
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.loginButtonText || ''}
+                              onChange={e => setSettings({ ...settings, loginButtonText: e.target.value })}
+                              placeholder="MASUK BELAJAR"
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-800 mb-1">
+                              Teks Tagline / Footer Login
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.loginTagline || ''}
+                              onChange={e => setSettings({ ...settings, loginTagline: e.target.value })}
+                              placeholder="Modul Pembelajaran IPA Berkelanjutan"
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={settings.showLoginQuote !== false}
+                              onChange={e => setSettings({ ...settings, showLoginQuote: e.target.checked })}
+                              className="w-4 h-4 text-emerald-600 rounded-sm focus:ring-emerald-500 border-slate-300"
+                            />
+                            <div>
+                              <span className="text-xs font-bold text-slate-800">
+                                Tampilkan Kutipan di Halaman Login
+                              </span>
+                              <p className="text-[11px] text-slate-500">
+                                Menampilkan kalimat kutipan motivasi di bawah judul login.
+                              </p>
+                            </div>
+                          </label>
+
+                          <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={settings.showLoginLogoAnimation !== false}
+                              onChange={e => setSettings({ ...settings, showLoginLogoAnimation: e.target.checked })}
+                              className="w-4 h-4 text-emerald-600 rounded-sm focus:ring-emerald-500 border-slate-300"
+                            />
+                            <div>
+                              <span className="text-xs font-bold text-slate-800">
+                                Animasi Logo 3D Berputar
+                              </span>
+                              <p className="text-[11px] text-slate-500">
+                                Mengaktifkan animasi putaran halus 3D pada logo sekolah di layar login.
+                              </p>
+                            </div>
+                          </label>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">
-                          Password Admin / Guru (Untuk Masuk Panel Ini)
-                        </label>
-                        <input
-                          type="password"
-                          value={settings.adminPassword || ''}
-                          onChange={e => setSettings({ ...settings, adminPassword: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-mono"
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          Gunakan kata sandi ini saat masuk ke panel melalui tombol Panel Admin.
-                        </p>
+                      {/* Tombol Simpan Khusus Tab Umum */}
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTabSettings('Umum')}
+                          disabled={isSavingSettings}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                        >
+                          {isSavingSettings ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Menyimpan...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} />
+                              <span>Simpan Pengaturan Umum</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   )}
-
-                  {/* Bottom Save Action Bar */}
-                  <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
-                      Perubahan akan langsung tersimpan ke cloud Firebase Firestore.
-                    </span>
-                    <button
-                      onClick={handleSaveSettings}
-                      disabled={isSavingSettings}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      {isSavingSettings ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          <span>Sedang Menyimpan Pengaturan...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} />
-                          <span>Simpan Semua Pengaturan</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
                 </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 8: FIREBASE USAGE DASHBOARD (PIE & BAR CHARTS, REAL-TIME SPARK QUOTA) */}
+              {/* ========================================================================= */}
+              {activeTab === 'firebase' && (
+                <FirebaseUsageDashboard
+                  modules={modules}
+                  quizzes={quizzes}
+                  games={games}
+                  classes={classes}
+                  students={students}
+                  scores={scores}
+                  logs={logs}
+                  settings={settings}
+                />
               )}
             </>
           )}
@@ -4910,6 +5071,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Manual Sync Dialog */}
+      <SyncDialog
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        onSyncComplete={() => {
+          loadAllData();
+          showNotification('Data materi dan konfigurasi berhasil disinkronkan dari Cloud!', 'success');
+        }}
+      />
     </div>
   );
 };

@@ -941,7 +941,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   homeButtonText: 'MULAI BELAJAR',
   homeCopyright: 'Copyright © SMPN 1 BENGKALIS',
   showHomeQuote: true,
-  showHomeThemeButton: true
+  showHomeThemeButton: true,
+
+  loginTitle: 'Selamat Datang di Modul Berkebun SMPN 1 Bengkalis',
+  loginSubtitle: '“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”',
+  loginButtonText: 'MASUK BELAJAR',
+  loginTagline: 'Modul Pembelajaran IPA Berkelanjutan',
+  showLoginQuote: true,
+  showLoginLogoAnimation: true
 };
 
 export const getDefaultGames = (): GameItem[] => [

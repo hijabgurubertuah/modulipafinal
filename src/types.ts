@@ -179,6 +179,14 @@ export type AppSettings = {
   homeCopyright?: string;
   showHomeQuote?: boolean;
   showHomeThemeButton?: boolean;
+
+  // Custom Halaman Login Settings
+  loginTitle?: string;
+  loginSubtitle?: string;
+  loginButtonText?: string;
+  loginTagline?: string;
+  showLoginQuote?: boolean;
+  showLoginLogoAnimation?: boolean;
 };
 
 export type Theme = {
