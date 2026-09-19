@@ -196,13 +196,18 @@ export const ModuleBase: React.FC<ModuleBaseProps> = ({
     } else {
       setQuizDelay(true);
       const isVideoPage = !!data.pages[activePage]?.videoUrl;
-      const totalSeconds = isVideoPage ? 30 : 10;
+      const customDelay = data.pages[activePage]?.quiz?.delaySeconds ?? data.pages[activePage]?.triggerQuestionDelay;
+      const totalSeconds = typeof customDelay === 'number' ? customDelay : (isVideoPage ? 30 : 10);
       setCountdownSeconds(totalSeconds);
+
+      if (totalSeconds <= 0) {
+        setQuizDelay(false);
+      }
 
       const timer = setTimeout(() => {
         setQuizDelay(false);
         setOpenedPages(prev => prev.includes(activePage) ? prev : [...prev, activePage]);
-      }, totalSeconds * 1000);
+      }, Math.max(0, totalSeconds) * 1000);
       return () => clearTimeout(timer);
     }
   }, [activePage, moduleNumber, completedPages, openedPages, data.pages]);
@@ -819,9 +824,16 @@ export const ModuleBase: React.FC<ModuleBaseProps> = ({
                 )}
 
                 {!currentPage.isSheet && (
-                  <div className="prose prose-slate max-w-none text-slate-700 whitespace-pre-line font-medium leading-relaxed text-justify">
-                    {renderFormattedText(currentPage.content)}
-                  </div>
+                  currentPage.content && /<[a-z][\s\S]*>/i.test(currentPage.content) ? (
+                    <div 
+                      className="prose prose-slate max-w-none text-slate-800 leading-relaxed font-sans"
+                      dangerouslySetInnerHTML={{ __html: currentPage.content }}
+                    />
+                  ) : (
+                    <div className="prose prose-slate max-w-none text-slate-700 whitespace-pre-line font-medium leading-relaxed text-justify">
+                      {renderFormattedText(currentPage.content)}
+                    </div>
+                  )
                 )}
 
                 {currentPage.imageUrl && (

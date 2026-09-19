@@ -224,7 +224,7 @@ const App = () => {
   }, [unlockedModules]);
 
   // --- Derived Data ---
-  const isTeacher = username.toLowerCase() === 'gurusmp';
+  const isTeacher = username.toLowerCase() === 'gurusmp' || isTeacherMode;
   const modulePasswords: Record<number, string> = {
     2: '121212',
     3: '133133',
@@ -873,6 +873,20 @@ const App = () => {
       {/* Main Content Area */}
       <main className="flex-1 h-screen overflow-y-auto relative flex flex-col leaf-pattern">
         <GardenDecorations />
+        
+        {/* Floating Return Button to Admin / Modul Editor */}
+        {isTeacher && (
+          <div className="fixed top-3.5 right-3.5 z-50">
+            <button
+              onClick={() => setCurrentView('admin')}
+              className="flex items-center gap-2 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-950 text-white backdrop-blur-md rounded-xl shadow-2xl border border-white/20 text-xs font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title="Kembali ke Panel Pengeditan Modul Admin"
+            >
+              <Icons.ArrowLeft size={15} className="text-emerald-400" />
+              <span>Kembali ke Edit Modul</span>
+            </button>
+          </div>
+        )}
         
         {/* Content View */}
         <div className={`flex-1 ${currentView === 'material' || currentView === 'modul' ? 'p-3 md:p-6' : 'p-4 md:p-6'} max-w-5xl mx-auto w-full relative z-10 flex flex-col`}>

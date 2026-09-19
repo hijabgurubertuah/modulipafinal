@@ -60,7 +60,8 @@ import {
   CheckCheck,
   Loader2,
   Flame,
-  LogIn
+  LogIn,
+  Clock
 } from 'lucide-react';
 import { 
   AppModule, 
@@ -88,6 +89,8 @@ import { GAME_TEMPLATES } from '../utils/gameTemplates';
 import { compressImage } from '../utils/imageCompressor';
 import { normalizeImageUrl, testImageLoad } from '../utils/imageUrlHelper';
 import { SyncDialog } from './SyncDialog';
+import { RichTextEditor } from './RichTextEditor';
+import { AdminAppScriptManager } from './AdminAppScriptManager';
 
 interface AdminDashboardProps {
   onBackToStudentView: (targetModule?: number) => void;
@@ -100,9 +103,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   // --- Navigation Tab State ---
   const [activeTab, setActiveTab] = useState<
-    'materi' | 'kuis' | 'game' | 'kelas' | 'siswa' | 'nilai' | 'log' | 'spreadsheet' | 'pengaturan' | 'firebase'
+    'materi' | 'kuis' | 'game' | 'kelas' | 'siswa' | 'nilai' | 'log' | 'spreadsheet' | 'pengaturan' | 'firebase' | 'appscript'
   >('materi');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+  const [isMobileModuleSidebarOpen, setIsMobileModuleSidebarOpen] = useState<boolean>(false);
 
   // --- Settings Sub-Tab State ---
   const [settingsSubTab, setSettingsSubTab] = useState<
@@ -147,6 +151,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddingClass, setIsAddingClass] = useState<boolean>(false);
   const [isUpdatingClassId, setIsUpdatingClassId] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
+  const [isSavingSingleModule, setIsSavingSingleModule] = useState<boolean>(false);
   const [isSavingStudent, setIsSavingStudent] = useState<boolean>(false);
   const [isImportingStudents, setIsImportingStudents] = useState<boolean>(false);
   const [isSavingPage, setIsSavingPage] = useState<boolean>(false);
@@ -266,10 +271,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       if (m.length > 0) {
-        if (selectedModuleId === null) {
-          setSelectedModuleId(m[0].id);
-        }
-        setSelectedQuizModule(prev => m.some(item => item.id === prev) ? prev : m[0].id);
+        const defaultMod = m.find(item => item.id === 1) || m[0];
+        setSelectedModuleId(defaultMod.id);
+        setEditingModule(defaultMod);
+        setSelectedQuizModule(prev => m.some(item => item.id === prev) ? prev : defaultMod.id);
       }
     } catch (err) {
       console.error('Error loading admin data:', err);
@@ -509,14 +514,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSaveModuleMeta = async () => {
-    if (!editingModule) return;
+    if (!editingModule || isSavingSingleModule) return;
+    setIsSavingSingleModule(true);
     try {
       await firestoreService.saveModule(editingModule);
-      showNotification(`Modul ${editingModule.id} berhasil disimpan ke Firebase!`, 'success');
+      showNotification(`Perubahan Modul ${editingModule.id} ("${editingModule.title || `Modul ${editingModule.id}`}") berhasil disimpan ke Firebase!`, 'success');
       const updated = modules.map(m => m.id === editingModule.id ? editingModule : m);
       setModules(updated);
     } catch (e: any) {
-      showNotification(`Gagal menyimpan modul: ${e?.message}`, 'error');
+      showNotification(`Gagal menyimpan modul: ${e?.message || 'Terjadi kesalahan'}`, 'error');
+    } finally {
+      setIsSavingSingleModule(false);
     }
   };
 
@@ -642,13 +650,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditingModule(updatedModule);
     setModules(modules.map(m => m.id === updatedModule.id ? updatedModule : m));
     setIsGameSelectorModalOpen(false);
-
-    try {
-      await firestoreService.saveModule(updatedModule);
-      showNotification(`Game "${selectedGame.title}" berhasil ditambahkan sebagai Halaman ${updatedPages.length}!`, 'success');
-    } catch (err: any) {
-      showNotification(`Game ditambahkan secara lokal: ${err?.message || ''}`, 'info');
-    }
+    showNotification(`Game "${selectedGame.title}" ditambahkan ke Draf Modul ${updatedModule.id}. Tekan 'Simpan Modul ke Firebase' untuk mempublikasikan.`, 'info');
   };
 
   const handleOpenCustomCodeGameEditor = () => {
@@ -693,13 +695,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       const updatedModule = { ...editingModule, pages };
       setEditingModule(updatedModule);
-      await firestoreService.saveModule(updatedModule);
       setModules(modules.map(m => m.id === updatedModule.id ? updatedModule : m));
       setIsPageEditorOpen(false);
       setEditingPage(null);
-      showNotification('Halaman / Game berhasil disimpan ke Firebase!', 'success');
+      showNotification(`Halaman "${finalPage.title}" berhasil disimpan ke Draf Modul ${updatedModule.id}. Tekan 'Simpan Perubahan Modul ke Firebase' untuk menyimpan ke Cloud!`, 'info');
     } catch (err: any) {
-      showNotification(`Gagal menyimpan halaman: ${err?.message || 'Error jaringan'}`, 'error');
+      showNotification(`Gagal menyimpan halaman: ${err?.message || 'Error'}`, 'error');
     } finally {
       setIsSavingPage(false);
     }
@@ -718,13 +719,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       id: pageId,
       targetName: pageObj?.title || `Halaman #${pageId + 1}`,
       title: `Hapus Halaman "${pageObj?.title || `Halaman ${pageId + 1}`}"?`,
-      subtitle: 'Konten atau game pada halaman ini akan dihapus dari modul.',
-      warningNote: 'Perubahan akan langsung disimpan ke modul ini di Firebase.',
+      subtitle: 'Konten atau game pada halaman ini akan dihapus dari draf modul.',
+      warningNote: 'Perubahan akan berlaku di draf modul ini.',
       data: { pageId }
     });
   };
 
-  const handleReorderPages = async (fromIndex: number, toIndex: number) => {
+  const handleReorderPages = (fromIndex: number, toIndex: number) => {
     if (!editingModule || fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
     if (fromIndex >= editingModule.pages.length || toIndex >= editingModule.pages.length) return;
 
@@ -739,13 +740,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     setEditingModule(updatedModule);
     setModules(modules.map(m => m.id === updatedModule.id ? updatedModule : m));
-
-    try {
-      await firestoreService.saveModule(updatedModule);
-      showNotification(`Urutan halaman "${movedPage.title || `Halaman ${fromIndex + 1}`}" dipindahkan ke posisi Halaman ${toIndex + 1}!`, 'success');
-    } catch (err: any) {
-      showNotification(`Gagal menyimpan urutan modul: ${err?.message || 'Error'}`, 'error');
-    }
+    showNotification(`Urutan halaman "${movedPage.title || `Halaman ${fromIndex + 1}`}" dipindahkan ke Draf Modul.`, 'info');
   };
 
   const handleMovePage = (index: number, direction: 'up' | 'down') => {
@@ -1068,9 +1063,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           const pages = editingModule.pages.filter(p => p.id !== pageId);
           const updatedModule = { ...editingModule, pages };
           setEditingModule(updatedModule);
-          await firestoreService.saveModule(updatedModule);
           setModules(modules.map(m => m.id === updatedModule.id ? updatedModule : m));
-          showNotification('Halaman telah dihapus.', 'success');
+          showNotification('Halaman telah dihapus dari Draf Modul lokal.', 'info');
         }
       }
     } catch (err: any) {
@@ -1562,6 +1556,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     {
       category: 'Integrasi & Sistem',
       items: [
+        { id: 'appscript' as const, label: 'Kode App Script', icon: Code2, count: undefined, color: 'text-indigo-600', badgeClass: 'bg-indigo-100 text-indigo-800' },
         { id: 'spreadsheet' as const, label: 'Login', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
         { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' },
         { id: 'firebase' as const, label: 'Firebase', icon: Flame, count: undefined, color: 'text-amber-600' }
@@ -1579,18 +1574,138 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans flex flex-col relative">
-      {/* --- FLOATING MOBILE SIDEBAR TRIGGER BUTTON (SISI KIRI TENGAH LAYAR HP) --- */}
+      {/* --- FLOATING MOBILE SIDEBAR TRIGGER BUTTONS (2 SEPARATE BUTTONS ON LEFT EDGE) --- */}
       <aside aria-label="Navigasi Menu HP" className="md:hidden">
+        {/* Tombol Sidebar Modul (Atas) - Warna Indigo */}
+        <button
+          id="btn-module-mobile-nav-trigger"
+          onClick={() => setIsMobileModuleSidebarOpen(true)}
+          className="fixed left-0 top-[calc(50%-44px)] -translate-y-1/2 z-40 w-[30px] h-[72px] bg-indigo-700/90 hover:bg-indigo-800 text-white backdrop-blur-md rounded-r-2xl border border-l-0 border-indigo-400/40 flex items-center justify-center shadow-xl cursor-pointer active:scale-95 transition-all group overflow-hidden"
+          title="Buka Daftar Modul"
+          aria-label="Buka Daftar Modul"
+        >
+          <BookOpen size={16} className="text-white opacity-95 group-hover:scale-110 transition-transform" />
+        </button>
+
+        {/* Tombol Sidebar Panel Admin (Bawah) - Warna Emerald */}
         <button
           id="btn-admin-mobile-nav-trigger"
           onClick={() => setIsMobileSidebarOpen(true)}
-          className="fixed left-0 top-1/2 -translate-y-1/2 z-40 w-[30px] h-[150px] bg-emerald-800/85 hover:bg-emerald-900 text-white backdrop-blur-md rounded-r-2xl border border-l-0 border-emerald-400/40 flex items-center justify-center shadow-xl cursor-pointer active:scale-95 transition-all group overflow-hidden"
+          className="fixed left-0 top-[calc(50%+44px)] -translate-y-1/2 z-40 w-[30px] h-[72px] bg-emerald-800/90 hover:bg-emerald-900 text-white backdrop-blur-md rounded-r-2xl border border-l-0 border-emerald-400/40 flex items-center justify-center shadow-xl cursor-pointer active:scale-95 transition-all group overflow-hidden"
           title="Buka Menu Pengelolaan Admin"
           aria-label="Buka Menu Pengelolaan Admin"
         >
-          <Menu size={18} className="text-white opacity-90 group-hover:opacity-100 group-hover:scale-110 transition-all" />
+          <Menu size={16} className="text-white opacity-95 group-hover:scale-110 transition-transform" />
         </button>
       </aside>
+
+      {/* --- MOBILE MODULE SIDEBAR DRAWER (SLIDE-OVER FROM LEFT) --- */}
+      <AnimatePresence>
+        {isMobileModuleSidebarOpen && (
+          <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileModuleSidebarOpen(false)}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
+            />
+
+            {/* Slide-over Drawer */}
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 260 }}
+              className="relative w-4/5 max-w-xs bg-white text-slate-900 h-full shadow-2xl flex flex-col z-10 overflow-hidden border-r border-slate-200"
+            >
+              {/* Drawer Header */}
+              <div className="p-4 bg-gradient-to-r from-indigo-700 to-purple-800 text-white flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold text-sm shadow-inner">
+                    <BookOpen size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black tracking-wide text-white">Daftar Modul</h2>
+                    <p className="text-[10px] text-indigo-100 font-medium">
+                      {modules.length} Modul Tersedia
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsMobileModuleSidebarOpen(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                  aria-label="Tutup daftar modul"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Module List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAddNewModule();
+                    setIsMobileModuleSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>Tambah Modul</span>
+                </button>
+
+                <div className="space-y-1.5 pt-1">
+                  {modules.map(mod => {
+                    const isVisible = mod.isPublished !== false;
+                    const isSelected = selectedModuleId === mod.id;
+                    return (
+                      <div
+                        key={mod.id}
+                        className={`px-3.5 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSelectModuleForEdit(mod);
+                            setActiveTab('materi');
+                            setIsMobileModuleSidebarOpen(false);
+                          }}
+                          className="flex-1 text-left text-xs font-bold truncate cursor-pointer py-0.5"
+                        >
+                          Modul {mod.id}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleModulePublished(mod.id, e)}
+                          title={isVisible ? "Tampil (Klik untuk sembunyikan)" : "Sembunyi (Klik untuk tampilkan)"}
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer shrink-0 ${
+                            isSelected
+                              ? isVisible
+                                ? 'text-emerald-100 hover:bg-white/20'
+                                : 'text-amber-200 hover:bg-white/20'
+                              : isVisible
+                              ? 'text-emerald-600 hover:bg-emerald-50'
+                              : 'text-amber-600 hover:bg-amber-50'
+                          }`}
+                        >
+                          {isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* --- MOBILE SIDEBAR DRAWER (SLIDE-OVER FROM LEFT) --- */}
       <AnimatePresence>
@@ -1794,25 +1909,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
                   return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveTab(item.id)}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                        isActive
-                          ? 'bg-white text-emerald-700 shadow-xs border border-slate-200 font-bold'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Icon size={16} className={isActive ? 'text-emerald-600' : 'text-slate-400'} />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {typeof item.count === 'number' && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
-                          item.badgeClass || 'bg-slate-200 text-slate-600'
-                        }`}>
-                          {item.count}
-                        </span>
+                    <div key={item.id} className="space-y-1">
+                      <button
+                        onClick={() => setActiveTab(item.id)}
+                        className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                          isActive
+                            ? 'bg-white text-emerald-700 shadow-xs border border-slate-200 font-bold'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon size={16} className={isActive ? 'text-emerald-600' : 'text-slate-400'} />
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {typeof item.count === 'number' && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+                            item.badgeClass || 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {item.count}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Sub-list modul hanya di sidebar */}
+                      {item.id === 'materi' && (
+                        <div className="pl-3 mt-1 space-y-1 border-l-2 border-emerald-200 ml-3">
+                          {modules.map((mod) => {
+                            const isSelected = activeTab === 'materi' && selectedModuleId === mod.id;
+                            const isVisible = mod.isPublished !== false;
+                            return (
+                              <div key={mod.id} className="flex items-center justify-between gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTab('materi');
+                                    handleSelectModuleForEdit(mod);
+                                  }}
+                                  className={`flex-1 text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all truncate cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-emerald-600 text-white font-bold shadow-2xs'
+                                      : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
+                                  }`}
+                                >
+                                  Modul {mod.id}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleModulePublished(mod.id, e)}
+                                  className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${
+                                    isSelected
+                                      ? 'text-white hover:bg-emerald-700'
+                                      : isVisible
+                                      ? 'text-emerald-600 hover:bg-slate-200'
+                                      : 'text-amber-600 hover:bg-slate-200'
+                                  }`}
+                                  title={isVisible ? 'Tampil' : 'Sembunyi'}
+                                >
+                                  {isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                                </button>
+                              </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={handleAddNewModule}
+                            className="w-full mt-1.5 flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold transition-all cursor-pointer border border-emerald-200"
+                          >
+                            <Plus size={12} />
+                            <span>+ Tambah Modul</span>
+                          </button>
+                        </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1833,414 +1999,308 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* TAB 1: KELOLA MATERI & MODUL (FIREBASE)                                  */}
               {/* ========================================================================= */}
               {activeTab === 'materi' && (
-                <div className="space-y-6 max-w-6xl">
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900">Kelola Materi & Modul</h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Kelola konten materi, urutan bab, dan game interaktif yang terhubung langsung ke Firebase Firestore.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={handleSyncMateriAndGamesToCloud}
-                        disabled={isCloudSyncing}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-                        title="Unggah dan sinkronkan seluruh materi modul beserta semua game ke Cloud Firestore agar dapat diakses penuh di link share"
-                      >
-                        {isCloudSyncing ? (
-                          <RefreshCw size={15} className="animate-spin" />
-                        ) : (
-                          <Cloud size={15} />
-                        )}
-                        <span>{isCloudSyncing ? (syncStatusMsg || 'Menyinkronkan...') : 'Sinkronkan Materi & Game ke Cloud'}</span>
-                      </button>
-                      <button
-                        onClick={handleAddNewModule}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                      >
-                        <Plus size={16} />
-                        <span>Tambah Modul Baru</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Modules Selector Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                    {modules.map(mod => {
-                      const isVisible = mod.isPublished !== false;
-                      const isSelected = selectedModuleId === mod.id;
-                      return (
-                        <div
-                          key={mod.id}
-                          className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between items-center text-center gap-1.5 ${
-                            isSelected
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/20'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <button
-                            onClick={() => handleSelectModuleForEdit(mod)}
-                            className="w-full flex flex-col items-center gap-0.5 cursor-pointer"
-                          >
-                            <span className="text-xs font-black">Modul {mod.id}</span>
-                            <span className="text-[10px] text-slate-500 truncate max-w-[80px]">
-                              {mod.pages?.length || 0} Halaman
+                <div className="space-y-5 max-w-7xl">
+                  {/* --- AREA DETAIL & EDITOR MODUL TERPILIH --- */}
+                  <div className="w-full">
+                    {editingModule ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-5">
+                        {/* Header Modul: Judul, Status Draf, Pratinjau & Tombol Simpan ke Firebase */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black shrink-0">
+                              Modul {editingModule.id}
                             </span>
-                          </button>
-                          
-                          {/* Quick Toggle Visibility */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleModulePublished(mod.id, e)}
-                            title={isVisible ? "Modul TAMPIL ke siswa (Klik untuk sembunyikan)" : "Modul DISEMBUNYIKAN (Klik untuk tampilkan ke siswa)"}
-                            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                              isVisible 
-                                ? 'bg-emerald-100/80 hover:bg-emerald-200 text-emerald-800 border border-emerald-300' 
-                                : 'bg-amber-100/80 hover:bg-amber-200 text-amber-800 border border-amber-300'
-                            }`}
-                          >
-                            {isVisible ? (
-                              <>
-                                <Eye size={10} className="text-emerald-700 shrink-0" />
-                                <span className="truncate">Tampil</span>
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff size={10} className="text-amber-700 shrink-0" />
-                                <span className="truncate">Sembunyi</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Active Selected Module Detail / Editor */}
-                  {editingModule && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-6">
-                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black">
-                            Modul {editingModule.id}
-                          </span>
-                          <h3 className="text-base font-bold text-slate-800">
-                            Pengaturan Modul & Konten Materi
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => onBackToStudentView(editingModule.id)}
-                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-                            title={`Buka dan uji Modul ${editingModule.id} di tampilan siswa`}
-                          >
-                            <Eye size={14} />
-                            <span>Pratinjau Modul di Siswa</span>
-                          </button>
-                          <button
-                            onClick={handleSaveModuleMeta}
-                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-                          >
-                            <Save size={14} />
-                            <span>Simpan Perubahan Modul</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteModule(editingModule.id)}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                            title="Hapus Modul"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Module Metadata Form & Visibility Toggle Banner */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Judul Modul
-                          </label>
-                          <input
-                            type="text"
-                            value={editingModule.title}
-                            onChange={e => setEditingModule({ ...editingModule, title: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Sub-judul / Topik Materi
-                          </label>
-                          <input
-                            type="text"
-                            value={editingModule.subtitle}
-                            onChange={e => setEditingModule({ ...editingModule, subtitle: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Password Pembuka Modul (Kosongkan jika bebas)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Contoh: 121212"
-                            value={editingModule.password || ''}
-                            onChange={e => setEditingModule({ ...editingModule, password: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
-                          />
-                        </div>
-
-                        {/* Visibility / Published Checkbox Banner */}
-                        <div className="md:col-span-3 bg-white p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-4 shadow-xs">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${editingModule.isPublished !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {editingModule.isPublished !== false ? <Eye size={20} /> : <EyeOff size={20} />}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-800">
-                                  Tampilkan Modul Ini ke Siswa
-                                </span>
-                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${editingModule.isPublished !== false ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
-                                  {editingModule.isPublished !== false ? '✓ Terlihat oleh Siswa' : '✗ Disembunyikan dari Siswa'}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
-                                {editingModule.isPublished !== false 
-                                  ? 'Modul dan halaman materinya aktif serta dapat diakses oleh siswa di menu belajar.' 
-                                  : 'Modul ini disembunyikan dari siswa. Siswa tidak akan melihat maupun mengakses materi modul ini.'}
-                              </p>
-                            </div>
+                            <h3 className="text-sm sm:text-base font-bold text-slate-800 truncate">
+                              {editingModule.title || `Modul ${editingModule.id}`}
+                            </h3>
+                            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[10px] font-medium">
+                              Mode Draf
+                            </span>
                           </div>
 
-                          <label className="flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-300 select-none">
-                            <input 
-                              type="checkbox" 
-                              checked={editingModule.isPublished !== false}
-                              onChange={e => {
-                                const nextVal = e.target.checked;
-                                const updated = { ...editingModule, isPublished: nextVal };
-                                setEditingModule(updated);
-                                const updatedList = modules.map(m => m.id === updated.id ? updated : m);
-                                setModules(updatedList);
-                                firestoreService.saveModule(updated).then(() => {
-                                  showNotification(
-                                    nextVal 
-                                      ? `Modul ${updated.id} sekarang DITAMPILKAN ke siswa.` 
-                                      : `Modul ${updated.id} sekarang DISEMBUNYIKAN dari siswa.`,
-                                    nextVal ? 'success' : 'info'
-                                  );
-                                }).catch(() => {});
-                              }}
-                              className="w-4 h-4 text-emerald-600 rounded-md border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                            />
-                            <span className="text-xs font-bold text-slate-700">
-                              {editingModule.isPublished !== false ? 'Dicentang (Tampilkan)' : 'Tidak Dicentang (Sembunyikan)'}
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Pages List within Module */}
-                      <div className="space-y-3 pt-3 border-t border-slate-200">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                              Daftar Halaman Sub-Materi & Game ({editingModule.pages?.length || 0})
-                            </h4>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              Tarik (drag) kartu / ikon grip ke atas atau ke bawah untuk menyusun urutan materi & game secara otomatis.
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
-                              onClick={() => handleOpenAddGame()}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                              onClick={() => onBackToStudentView(editingModule.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                              title={`Buka dan uji Modul ${editingModule.id} di tampilan siswa`}
                             >
-                              <Gamepad2 size={14} />
-                              <span>+ Tambah Game</span>
+                              <Eye size={14} />
+                              <span>Pratinjau</span>
                             </button>
+
+                            <button
+                              type="button"
+                              disabled={isSavingSingleModule}
+                              onClick={handleSaveModuleMeta}
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                              title="Simpan seluruh perubahan draf modul ini ke Firebase Cloud"
+                            >
+                              {isSavingSingleModule ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Save size={14} />
+                              )}
+                              <span>Simpan ke Firebase</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Module Metadata Form */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Judul Modul
+                            </label>
+                            <input
+                              type="text"
+                              value={editingModule.title}
+                              onChange={e => setEditingModule({ ...editingModule, title: e.target.value })}
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Sub-judul / Topik Materi
+                            </label>
+                            <input
+                              type="text"
+                              value={editingModule.subtitle}
+                              onChange={e => setEditingModule({ ...editingModule, subtitle: e.target.value })}
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Password Pembuka Modul (Kosongkan jika bebas)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Contoh: 121212"
+                              value={editingModule.password || ''}
+                              onChange={e => setEditingModule({ ...editingModule, password: e.target.value })}
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Pages Section */}
+                        <div className="space-y-3 pt-3 border-t border-slate-200">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
                               onClick={() => handleOpenPageEditor()}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 active:scale-95 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                              className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 active:scale-95 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
                             >
                               <Plus size={14} />
                               <span>+ Tambah Halaman Materi</span>
                             </button>
                           </div>
-                        </div>
 
-                        <div className="space-y-2">
-                          {(editingModule.pages || []).map((page, idx) => {
-                            const isDraggingThis = draggedPageIndex === idx;
-                            const isDragOverThis = dragOverPageIndex === idx && draggedPageIndex !== idx;
+                          <div className="space-y-2">
+                            {(editingModule.pages || []).map((page, idx) => {
+                              const isDraggingThis = draggedPageIndex === idx;
+                              const isDragOverThis = dragOverPageIndex === idx && draggedPageIndex !== idx;
 
-                            return (
-                              <div
-                                key={page.id}
-                                draggable
-                                onDragStart={(e) => {
-                                  setDraggedPageIndex(idx);
-                                  e.dataTransfer.effectAllowed = 'move';
-                                  e.dataTransfer.setData('text/plain', String(idx));
-                                }}
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  e.dataTransfer.dropEffect = 'move';
-                                  if (dragOverPageIndex !== idx) {
+                              return (
+                                <div
+                                  key={page.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    setDraggedPageIndex(idx);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/plain', String(idx));
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                    if (dragOverPageIndex !== idx) {
+                                      setDragOverPageIndex(idx);
+                                    }
+                                  }}
+                                  onDragEnter={(e) => {
+                                    e.preventDefault();
                                     setDragOverPageIndex(idx);
-                                  }
-                                }}
-                                onDragEnter={(e) => {
-                                  e.preventDefault();
-                                  setDragOverPageIndex(idx);
-                                }}
-                                onDragLeave={(e) => {
-                                  e.preventDefault();
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (draggedPageIndex !== null && draggedPageIndex !== idx) {
-                                    handleReorderPages(draggedPageIndex, idx);
-                                  }
-                                  setDraggedPageIndex(null);
-                                  setDragOverPageIndex(null);
-                                }}
-                                onDragEnd={() => {
-                                  setDraggedPageIndex(null);
-                                  setDragOverPageIndex(null);
-                                }}
-                                className={`rounded-xl p-3.5 flex items-center justify-between gap-3 transition-all select-none ${
-                                  isDraggingThis
-                                    ? 'opacity-40 border-2 border-dashed border-emerald-400 bg-emerald-50/30'
-                                    : isDragOverThis
-                                    ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/70 shadow-md scale-[1.01]'
-                                    : page.isGame
-                                    ? 'bg-white border border-indigo-200 bg-gradient-to-r from-indigo-50/40 via-purple-50/20 to-white hover:border-indigo-300 shadow-xs'
-                                    : 'bg-white border border-slate-200 hover:border-slate-300'
-                                }`}
+                                  }}
+                                  onDragLeave={(e) => {
+                                    e.preventDefault();
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedPageIndex !== null && draggedPageIndex !== idx) {
+                                      handleReorderPages(draggedPageIndex, idx);
+                                    }
+                                    setDraggedPageIndex(null);
+                                    setDragOverPageIndex(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedPageIndex(null);
+                                    setDragOverPageIndex(null);
+                                  }}
+                                  className={`rounded-xl p-3 sm:p-3.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 sm:gap-3 transition-all select-none ${
+                                    isDraggingThis
+                                      ? 'opacity-40 border-2 border-dashed border-emerald-400 bg-emerald-50/30'
+                                      : isDragOverThis
+                                      ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/70 shadow-md scale-[1.01]'
+                                      : page.isGame
+                                      ? 'bg-white border border-indigo-200 bg-gradient-to-r from-indigo-50/40 via-purple-50/20 to-white hover:border-indigo-300 shadow-xs'
+                                      : 'bg-white border border-slate-200 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
+                                    {/* Drag Handle */}
+                                    <div
+                                      className="p-1.5 text-slate-400 hover:text-slate-700 active:text-emerald-600 cursor-grab active:cursor-grabbing rounded hover:bg-slate-100 transition-colors shrink-0 touch-manipulation"
+                                      title="Tarik ke atas atau ke bawah untuk memindahkan urutan"
+                                    >
+                                      <GripVertical size={16} />
+                                    </div>
+
+                                    {/* Reorder Buttons Up/Down for touch / quick click */}
+                                    <div className="flex flex-col gap-0.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={() => handleMovePage(idx, 'up')}
+                                        className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-all cursor-pointer touch-manipulation"
+                                        title="Pindahkan ke atas (Halaman sebelumnya)"
+                                      >
+                                        <ChevronUp size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={idx === (editingModule.pages?.length || 0) - 1}
+                                        onClick={() => handleMovePage(idx, 'down')}
+                                        className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-all cursor-pointer touch-manipulation"
+                                        title="Pindahkan ke bawah (Halaman berikutnya)"
+                                      >
+                                        <ChevronDown size={14} />
+                                      </button>
+                                    </div>
+
+                                    {/* Page Number Badge */}
+                                    <span
+                                      className={`w-7 h-7 rounded-lg font-mono text-xs flex items-center justify-center font-bold shrink-0 ${
+                                        page.isGame
+                                          ? 'bg-indigo-600 text-white shadow-xs'
+                                          : 'bg-slate-100 text-slate-700'
+                                      }`}
+                                      title={`Posisi Urutan: Halaman ${idx + 1}`}
+                                    >
+                                      {idx + 1}
+                                    </span>
+
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <h5 className="text-xs font-bold text-slate-900 truncate">
+                                          {page.title || `Halaman ${idx + 1}`}
+                                        </h5>
+                                        {page.isGame && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0 flex items-center gap-1">
+                                            <Gamepad2 size={11} />
+                                            {page.gameType === 'custom_tsx' ? 'Game TSX/React' : page.gameType === 'custom_html' ? 'Game HTML5' : 'Game Edukasi'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-500">
+                                        {page.isGame && (
+                                          <span className="inline-flex items-center gap-0.5 text-indigo-600 font-semibold">
+                                            <Code2 size={11} /> Kode Game Aktif
+                                          </span>
+                                        )}
+                                        {page.videoUrl && (
+                                          <span className="inline-flex items-center gap-0.5 text-rose-600 font-semibold">
+                                            <Video size={11} /> Video
+                                          </span>
+                                        )}
+                                        {page.imageUrl && (
+                                          <span className="inline-flex items-center gap-0.5 text-sky-600 font-semibold">
+                                            <ImageIcon size={11} /> Gambar
+                                          </span>
+                                        )}
+                                        {page.quiz && (
+                                          <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold">
+                                            <HelpCircle size={11} /> Pertanyaan Refleksi
+                                          </span>
+                                        )}
+                                        {page.isSheet && (
+                                          <span className="inline-flex items-center gap-0.5 text-emerald-600 font-semibold">
+                                            <FileSpreadsheet size={11} /> Sheet Embed
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenPageEditor(page)}
+                                      className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                        page.isGame 
+                                          ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200' 
+                                          : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                                      }`}
+                                    >
+                                      <Edit size={13} />
+                                      <span>{page.isGame ? 'Edit Game' : 'Edit Isi'}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePage(page.id)}
+                                      className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                      title="Hapus Halaman"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Tombol Simpan Perubahan Modul Khusus di Bawah & Tombol Hapus */}
+                          <div className="pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                type="button"
+                                disabled={isSavingSingleModule}
+                                onClick={handleSaveModuleMeta}
+                                className="flex-1 py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] text-white rounded-2xl text-sm sm:text-base font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                               >
-                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                  {/* Drag Handle */}
-                                  <div
-                                    className="p-1 text-slate-400 hover:text-slate-700 active:text-emerald-600 cursor-grab active:cursor-grabbing rounded hover:bg-slate-100 transition-colors shrink-0"
-                                    title="Tarik ke atas atau ke bawah untuk memindahkan urutan"
-                                  >
-                                    <GripVertical size={16} />
-                                  </div>
-
-                                  {/* Reorder Buttons Up/Down for touch / quick click */}
-                                  <div className="flex flex-col gap-0.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      disabled={idx === 0}
-                                      onClick={() => handleMovePage(idx, 'up')}
-                                      className="p-0.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-all cursor-pointer"
-                                      title="Pindahkan ke atas (Halaman sebelumnya)"
-                                    >
-                                      <ChevronUp size={12} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={idx === (editingModule.pages?.length || 0) - 1}
-                                      onClick={() => handleMovePage(idx, 'down')}
-                                      className="p-0.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-all cursor-pointer"
-                                      title="Pindahkan ke bawah (Halaman berikutnya)"
-                                    >
-                                      <ChevronDown size={12} />
-                                    </button>
-                                  </div>
-
-                                  {/* Page Number Badge */}
-                                  <span
-                                    className={`w-7 h-7 rounded-lg font-mono text-xs flex items-center justify-center font-bold shrink-0 ${
-                                      page.isGame
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'bg-slate-100 text-slate-700'
-                                    }`}
-                                    title={`Posisi Urutan: Halaman ${idx + 1}`}
-                                  >
-                                    {idx + 1}
-                                  </span>
-
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <h5 className="text-xs font-bold text-slate-900 truncate">
-                                        {page.title || `Halaman ${idx + 1}`}
-                                      </h5>
-                                      {page.isGame && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0 flex items-center gap-1">
-                                          <Gamepad2 size={11} />
-                                          {page.gameType === 'custom_tsx' ? 'Game TSX/React' : page.gameType === 'custom_html' ? 'Game HTML5' : 'Game Edukasi'}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-500">
-                                      {page.isGame && (
-                                        <span className="inline-flex items-center gap-0.5 text-indigo-600 font-semibold">
-                                          <Code2 size={11} /> Kode Game Aktif
-                                        </span>
-                                      )}
-                                      {page.videoUrl && (
-                                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-semibold">
-                                          <Video size={11} /> Video
-                                        </span>
-                                      )}
-                                      {page.imageUrl && (
-                                        <span className="inline-flex items-center gap-0.5 text-sky-600 font-semibold">
-                                          <ImageIcon size={11} /> Gambar
-                                        </span>
-                                      )}
-                                      {page.quiz && (
-                                        <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold">
-                                          <HelpCircle size={11} /> Pertanyaan Pemantik
-                                        </span>
-                                      )}
-                                      {page.isSheet && (
-                                        <span className="inline-flex items-center gap-0.5 text-emerald-600 font-semibold">
-                                          <FileSpreadsheet size={11} /> Sheet Embed
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenPageEditor(page)}
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                                      page.isGame 
-                                        ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200' 
-                                        : 'text-emerald-700 hover:bg-emerald-50'
-                                    }`}
-                                  >
-                                    <Edit size={13} />
-                                    <span>{page.isGame ? 'Edit Game' : 'Edit Isi'}</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeletePage(page.id)}
-                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                                    title="Hapus Halaman"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                                {isSavingSingleModule ? (
+                                  <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    <span>Menyimpan Modul {editingModule.id} ke Firebase...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save size={18} />
+                                    <span>Simpan Perubahan Modul {editingModule.id}</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteModule(editingModule.id)}
+                                className="p-3.5 text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-2xl transition-all cursor-pointer shadow-xs active:scale-95 flex items-center justify-center shrink-0"
+                                title="Hapus Modul Ini"
+                              >
+                                <Trash2 size={20} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="p-12 text-center bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                        <BookOpen size={36} className="text-slate-400 mx-auto" />
+                        <p className="text-sm font-bold text-slate-700">Pilih salah satu modul di samping untuk mulai mengedit</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -3780,6 +3840,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   settings={settings}
                 />
               )}
+
+              {/* ========================================================================= */}
+              {/* TAB 9: GOOGLE APPS SCRIPT DRIVE INTEGRATION                               */}
+              {/* ========================================================================= */}
+              {activeTab === 'appscript' && (
+                <AdminAppScriptManager
+                  settings={settings}
+                  onSaveSettings={async (newSettings) => {
+                    setSettings(newSettings);
+                    await firestoreService.saveSettings(newSettings);
+                  }}
+                  showNotification={showNotification}
+                />
+              )}
             </>
           )}
         </main>
@@ -3823,222 +3897,260 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Mode Switcher: Materi Standar VS Game Interaktif */}
-              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPageEditorTab('content');
-                    setEditingPage({ ...editingPage, isGame: false });
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    pageEditorTab === 'content'
-                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/80'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <BookOpen size={15} className={pageEditorTab === 'content' ? 'text-emerald-600' : 'text-slate-400'} />
-                  <span>Materi Pembelajaran (Teks & Media)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPageEditorTab('game');
-                    setEditingPage({
-                      ...editingPage,
-                      isGame: true,
-                      gameType: editingPage.gameType || 'custom_html',
-                      gameCode: editingPage.gameCode || GAME_TEMPLATES[0].code
-                    });
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    pageEditorTab === 'game'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Gamepad2 size={15} />
-                  <span>Game Interaktif (Kode HTML / TSX)</span>
-                </button>
-              </div>
+              {/* Mode Switcher: Hanya ditampilkan jika sedang mengelola game */}
+              {editingPage.isGame && pageEditorTab === 'game' && (
+                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <div className="flex-1 py-2 px-3 rounded-lg text-xs font-bold text-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xs flex items-center justify-center gap-2">
+                    <Gamepad2 size={15} />
+                    <span>Game Edukasi Interaktif</span>
+                  </div>
+                </div>
+              )}
 
               {/* ------------------------------------------------------------- */}
-              {/* TAB 1: MATERI STANDAR (Teks, Video, Gambar, Kuis Pemantik)    */}
+              {/* TAB 1: MATERI STANDAR (Judul, Rich Text Editor, Refleksi)     */}
               {/* ------------------------------------------------------------- */}
               {pageEditorTab === 'content' && (
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Judul Halaman</label>
-                    <input
-                      type="text"
-                      value={editingPage.title}
-                      onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold focus:bg-white focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Pertanyaan Pemantik / Motivasi Awal
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: Mengapa tanaman membutuhkan sinar matahari?"
-                      value={editingPage.triggerQuestion || ''}
-                      onChange={e => setEditingPage({ ...editingPage, triggerQuestion: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Teks Konten Materi Lengkap
-                    </label>
-                    <textarea
-                      rows={6}
-                      value={editingPage.content}
-                      onChange={e => setEditingPage({ ...editingPage, content: e.target.value })}
-                      placeholder="Tuliskan materi pembelajaran secara runtut di sini..."
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-sans leading-relaxed focus:bg-white focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block font-semibold text-slate-700">
-                          Link Video YouTube / Drive
-                        </label>
-                        {editingPage.videoUrl && (
-                          <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-                            {getCleanVideoEmbedUrl(editingPage.videoUrl).isYouTube ? '✓ Terdeteksi YouTube' : '✓ Video Terpasang'}
-                          </span>
-                        )}
-                      </div>
+                <div className="space-y-4 text-xs">
+                  {/* Judul Halaman & Dropdown Ubah ke Game */}
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">Judul Halaman</label>
                       <input
-                        type="url"
-                        placeholder="Contoh: https://www.youtube.com/watch?v=bO5DloC3mpI atau youtu.be/..."
-                        value={editingPage.videoUrl || ''}
-                        onChange={e => setEditingPage({ ...editingPage, videoUrl: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono text-[11px] focus:bg-white focus:border-emerald-500 transition-colors"
+                        type="text"
+                        value={editingPage.title}
+                        onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
+                        placeholder="Judul halaman..."
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-hidden transition-all"
                       />
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Bisa memasukkan <strong>link mentahan biasa</strong> (misal <code className="text-emerald-700 bg-emerald-50 px-1 rounded">youtube.com/watch?v=...</code> atau <code className="text-emerald-700 bg-emerald-50 px-1 rounded">youtu.be/...</code>) ataupun link embed. Sistem otomatis menyesuaikan agar siswa dapat langsung menontonnya.
-                      </p>
                     </div>
-
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">
-                        Link Gambar Ilustrasi (Image URL)
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://..."
-                        value={editingPage.imageUrl || ''}
-                        onChange={e => setEditingPage({ ...editingPage, imageUrl: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono text-[11px] focus:bg-white focus:border-emerald-500 transition-colors"
-                      />
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Opsional. Menampilkan poster atau diagram materi di bawah teks.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Live Video Preview in Editor */}
-                  {editingPage.videoUrl && (
-                    <div className="p-3 bg-slate-900/5 border border-slate-200 rounded-xl space-y-2">
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                        <span className="flex items-center gap-1.5">
-                          <Video size={14} className="text-red-500" />
-                          <span>Pratinjau Video (Tampilan Siswa):</span>
-                        </span>
-                      </div>
-                      <div className="max-w-md mx-auto">
-                        <VideoPlayer url={editingPage.videoUrl} title={editingPage.title} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* In-Page Quick Quiz */}
-                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-amber-900">Pertanyaan Pemantik / Refleksi di Halaman:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (editingPage.quiz) {
-                            setEditingPage({ ...editingPage, quiz: undefined });
+                    
+                    {/* Pilih Game Interaktif Singkat */}
+                    <div className="shrink-0 flex items-center gap-2">
+                      <select
+                        aria-label="Pilih Game Interaktif"
+                        value=""
+                        onChange={e => {
+                          const selectedGameId = e.target.value;
+                          if (!selectedGameId) return;
+                          const chosen = games.find(g => g.id === selectedGameId);
+                          if (chosen) {
+                            setEditingPage({
+                              ...editingPage,
+                              isGame: true,
+                              title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : chosen.title,
+                              gameId: chosen.id,
+                              gameType: chosen.type,
+                              gameCode: chosen.code || '',
+                              gameInstructions: chosen.instructions || '',
+                              gamePassScore: chosen.passScore || 100
+                            });
+                            setPageEditorTab('game');
                           } else {
                             setEditingPage({
                               ...editingPage,
-                              quiz: {
-                                question: 'Apakah kamu sudah paham materi ini?',
-                                options: [
-                                  { id: 'A', text: 'Sudah paham, lanjut!', isCorrect: true },
-                                  { id: 'B', text: 'Perlu baca lagi', isCorrect: false }
-                                ]
-                              }
+                              isGame: true,
+                              gameType: 'custom_html',
+                              gameCode: GAME_TEMPLATES[0]?.code || '',
+                              gameInstructions: ''
                             });
+                            setPageEditorTab('game');
                           }
                         }}
-                        className="text-[11px] font-bold text-amber-800 underline cursor-pointer"
+                        className="px-3.5 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl font-bold text-xs transition-all cursor-pointer outline-hidden shadow-2xs"
                       >
-                        {editingPage.quiz ? 'Hapus Pertanyaan' : '+ Tambah Pertanyaan di Halaman'}
-                      </button>
+                        <option value="">🎮 Ubah ke Game Interaktif...</option>
+                        {games.map(g => (
+                          <option key={`pick-game-${g.id}`} value={g.id}>
+                            {g.title} ({g.type === 'custom_tsx' ? 'React' : 'HTML'})
+                          </option>
+                        ))}
+                        {games.length === 0 && (
+                          <option value="default_new">Game Interaktif Baru</option>
+                        )}
+                      </select>
                     </div>
+                  </div>
 
-                    {editingPage.quiz && (
-                      <div className="space-y-2 pt-2">
-                        <input
-                          type="text"
-                          placeholder="Kalimat Pertanyaan"
-                          value={editingPage.quiz.question}
-                          onChange={e => setEditingPage({
+                  {/* WYSIWYG Rich Text Editor Lengkap & Modern */}
+                  <div>
+                    <RichTextEditor
+                      label="Teks Konten Materi Lengkap"
+                      value={editingPage.content || ''}
+                      onChange={val => setEditingPage({ ...editingPage, content: val })}
+                      placeholder="Mulai ketik isi materi pembelajaran yang lengkap, terstruktur, dan interaktif di sini..."
+                      minHeight="320px"
+                      webAppUrl={settings.driveUploadScriptUrl || settings.googleAppsScriptUrl}
+                      defaultFolderId={settings.driveFolderId}
+                    />
+                  </div>
+
+                  {/* Pertanyaan Refleksi (Di Bawah Materi) */}
+                  {editingPage.quiz ? (
+                    <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                          <HelpCircle size={15} className="text-amber-600 shrink-0" />
+                          <span>Pertanyaan Refleksi</span>
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          {/* Stepper Waktu Aktif */}
+                          <div className="flex items-center gap-1 bg-white border border-amber-300 rounded-xl px-2 py-1 shadow-2xs">
+                            <Clock size={13} className="text-amber-700 shrink-0" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cur = editingPage.quiz?.delaySeconds ?? editingPage.triggerQuestionDelay ?? 10;
+                                const next = Math.max(0, cur - 5);
+                                setEditingPage({
+                                  ...editingPage,
+                                  triggerQuestionDelay: next,
+                                  quiz: { ...editingPage.quiz!, delaySeconds: next }
+                                });
+                              }}
+                              className="w-5 h-5 flex items-center justify-center rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-black text-xs cursor-pointer transition-colors active:scale-95"
+                              title="Kurangi 5 detik"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min={0}
+                              max={300}
+                              value={editingPage.quiz?.delaySeconds ?? editingPage.triggerQuestionDelay ?? 10}
+                              onChange={e => {
+                                const val = Math.max(0, parseInt(e.target.value) || 0);
+                                setEditingPage({
+                                  ...editingPage,
+                                  triggerQuestionDelay: val,
+                                  quiz: { ...editingPage.quiz!, delaySeconds: val }
+                                });
+                              }}
+                              className="w-9 text-center font-bold text-xs bg-transparent border-0 outline-hidden p-0 text-amber-950 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <span className="text-[11px] font-bold text-amber-800 mr-0.5">dtk</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cur = editingPage.quiz?.delaySeconds ?? editingPage.triggerQuestionDelay ?? 10;
+                                const next = cur + 5;
+                                setEditingPage({
+                                  ...editingPage,
+                                  triggerQuestionDelay: next,
+                                  quiz: { ...editingPage.quiz!, delaySeconds: next }
+                                });
+                              }}
+                              className="w-5 h-5 flex items-center justify-center rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-black text-xs cursor-pointer transition-colors active:scale-95"
+                              title="Tambah 5 detik"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          {/* Tombol Hapus Pertanyaan (Icon Tong Sampah) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPage({
+                                ...editingPage,
+                                quiz: undefined,
+                                triggerQuestion: ''
+                              });
+                            }}
+                            className="p-1.5 text-rose-600 hover:text-white hover:bg-rose-600 bg-white border border-rose-200 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-95 flex items-center justify-center"
+                            title="Hapus Pertanyaan"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Input Kalimat Pertanyaan */}
+                      <input
+                        type="text"
+                        placeholder="Tuliskan pertanyaan refleksi..."
+                        value={editingPage.quiz.question}
+                        onChange={e => {
+                          const qVal = e.target.value;
+                          setEditingPage({
                             ...editingPage,
-                            quiz: { ...editingPage.quiz!, question: e.target.value }
-                          })}
-                          className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs"
-                        />
+                            triggerQuestion: qVal,
+                            quiz: { ...editingPage.quiz!, question: qVal }
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-hidden"
+                      />
 
-                        <div className="space-y-1.5">
-                          {editingPage.quiz.options.map((opt, oIdx) => (
-                            <div key={opt.id} className="flex items-center gap-2">
-                              <span className="font-bold w-4">{opt.id}.</span>
+                      {/* Options */}
+                      <div className="space-y-1.5 pt-1">
+                        {editingPage.quiz.options.map((opt, oIdx) => (
+                          <div key={opt.id} className="flex items-center gap-2">
+                            <span className="font-bold text-amber-900 w-4 text-center">{opt.id}.</span>
+                            <input
+                              type="text"
+                              value={opt.text}
+                              onChange={e => {
+                                const newOpts = [...editingPage.quiz!.options];
+                                newOpts[oIdx].text = e.target.value;
+                                setEditingPage({
+                                  ...editingPage,
+                                  quiz: { ...editingPage.quiz!, options: newOpts }
+                                });
+                              }}
+                              placeholder={`Pilihan ${opt.id}...`}
+                              className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                            />
+                            <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-amber-200 rounded-xl text-[11px] font-bold text-emerald-800 shrink-0 cursor-pointer hover:bg-emerald-50 transition-colors">
                               <input
-                                type="text"
-                                value={opt.text}
+                                type="checkbox"
+                                checked={!!opt.isCorrect}
                                 onChange={e => {
                                   const newOpts = [...editingPage.quiz!.options];
-                                  newOpts[oIdx].text = e.target.value;
+                                  newOpts[oIdx].isCorrect = e.target.checked;
                                   setEditingPage({
                                     ...editingPage,
                                     quiz: { ...editingPage.quiz!, options: newOpts }
                                   });
                                 }}
-                                className="flex-1 px-2.5 py-1 bg-white border border-amber-300 rounded-lg text-xs"
+                                className="accent-emerald-600 rounded"
                               />
-                              <label className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800 shrink-0">
-                                <input
-                                  type="checkbox"
-                                  checked={!!opt.isCorrect}
-                                  onChange={e => {
-                                    const newOpts = [...editingPage.quiz!.options];
-                                    newOpts[oIdx].isCorrect = e.target.checked;
-                                    setEditingPage({
-                                      ...editingPage,
-                                      quiz: { ...editingPage.quiz!, options: newOpts }
-                                    });
-                                  }}
-                                />
-                                Benar
-                              </label>
-                            </div>
-                          ))}
-                        </div>
+                              <span>Benar</span>
+                            </label>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                      <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
+                        <HelpCircle size={15} className="text-slate-400" />
+                        <span>Pertanyaan Refleksi (Opsional)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPage({
+                            ...editingPage,
+                            triggerQuestion: editingPage.triggerQuestion || 'Apakah kamu sudah memahami konsep ini?',
+                            triggerQuestionDelay: 10,
+                            quiz: {
+                              question: editingPage.triggerQuestion || 'Apakah kamu sudah memahami konsep ini?',
+                              delaySeconds: 10,
+                              options: [
+                                { id: 'A', text: 'Sudah paham, siap lanjut!', isCorrect: true },
+                                { id: 'B', text: 'Masih perlu membaca kembali', isCorrect: false }
+                              ]
+                            }
+                          });
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        <Plus size={14} />
+                        <span>Tambah Pertanyaan Refleksi</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4047,6 +4159,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* ------------------------------------------------------------- */}
               {pageEditorTab === 'game' && (
                 <div className="space-y-4 text-xs">
+                  {/* Banner & Tombol Batalkan Game (Kembali ke Materi Biasa) */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-purple-50 border border-purple-200 p-3.5 rounded-2xl">
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-2 bg-purple-600 text-white rounded-xl shadow-2xs">
+                        <Gamepad2 size={16} />
+                      </span>
+                      <div>
+                        <h4 className="font-bold text-purple-950 text-xs sm:text-sm">Halaman Game Interaktif</h4>
+                        <p className="text-[11px] text-purple-700">Pilih game dari Kelola Game atau sesuaikan kode game di bawah ini.</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPage({
+                          ...editingPage,
+                          isGame: false
+                        });
+                        setPageEditorTab('content');
+                      }}
+                      className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 flex items-center gap-1.5"
+                    >
+                      <RotateCcw size={14} />
+                      <span>Kembalikan ke Materi Biasa</span>
+                    </button>
+                  </div>
+
                   {/* Game Configuration Bar */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <div>
@@ -4102,13 +4242,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-purple-900 flex items-center gap-1.5">
                           <Gamepad2 size={14} className="text-purple-600" />
-                          <span>Pilih dari Bank Game Firebase ({games.length} Tersedia):</span>
-                        </span>
-                        <span className="text-[10px] text-purple-600 font-medium hidden sm:inline">
-                          Pilih game untuk langsung memasang ke halaman ini
+                          <span>Pilih dari Daftar Game:</span>
                         </span>
                       </div>
                       <select
+                        aria-label="Pilih Game dari Bank Game"
                         value={editingPage.gameId || ''}
                         onChange={e => {
                           const chosen = games.find(g => g.id === e.target.value);
@@ -4126,10 +4264,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         }}
                         className="w-full px-3 py-2 bg-white border border-purple-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-hidden"
                       >
-                        <option value="">-- Pilih Game dari Bank Game --</option>
+                        <option value="">-- Pilih Game --</option>
                         {games.map(g => (
                           <option key={`game-opt-${g.id}`} value={g.id}>
-                            [{g.category || 'Game'}] {g.title} ({g.type})
+                            {g.title} ({g.type === 'custom_tsx' ? 'React' : 'HTML5'})
                           </option>
                         ))}
                       </select>

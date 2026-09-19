@@ -12,6 +12,7 @@ export type QuestionOption = {
 export type PageQuiz = {
   question: string;
   options: QuestionOption[];
+  delaySeconds?: number;
 };
 
 export type ModulePage = {
@@ -21,6 +22,7 @@ export type ModulePage = {
   content: string;
   copyablePrompt?: string;
   triggerQuestion?: string;
+  triggerQuestionDelay?: number;
   videoUrl?: string;
   imageUrl?: string;
   imagePreviewUrl?: string;
@@ -151,6 +153,8 @@ export type ActivityLog = {
 
 export type AppSettings = {
   googleAppsScriptUrl: string;
+  driveUploadScriptUrl?: string;
+  driveFolderId?: string;
   sheetId: string;
   sheetUrl?: string;
   studentCsvUrl?: string;
