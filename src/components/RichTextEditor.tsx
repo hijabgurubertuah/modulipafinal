@@ -78,6 +78,24 @@ const normalizeVideoUrl = (url: string): { embedUrl: string; type: 'youtube' | '
   return { embedUrl: trimmed, type: 'other' };
 };
 
+// Convert markdown syntax like **bold** or *italic* into live HTML elements so asterisks never appear as raw text
+export const convertMarkdownToRichHtml = (val: string): string => {
+  if (!val) return '';
+  let html = val;
+  // If text contains no HTML tags, wrap double linebreaks into paragraphs
+  if (!/<[a-z][\s\S]*>/i.test(val)) {
+    const paragraphs = val.split(/\n\s*\n/);
+    html = paragraphs
+      .map(p => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
+      .join('');
+  }
+  // Convert markdown **bold** -> <strong>bold</strong>
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Convert markdown *italic* -> <em>italic</em>
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  return html;
+};
+
 const POPULAR_EMOJIS = [
   '😊', '👍', '⭐', '🏆', '📚', '📌', '🔥', '💡',
   '🧪', '🔬', '🌱', '🌍', '⚡', '🎯', '🚀', '📝',
@@ -117,9 +135,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const savedSelectionRef = useRef<Range | null>(null);
-
-  // View Modes: Only 'visual' and 'preview' (HTML code tab removed as requested)
-  const [viewMode, setViewMode] = useState<'visual' | 'preview'>('visual');
 
   // Dropdowns / Popovers State (Protected against off-screen overflow on mobile)
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -162,12 +177,17 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     return '';
   })();
 
-  // Sync internal editor content with prop value safely without cursor reset
+  // Sync internal editor content with prop value safely and convert any markdown asterisks to live HTML
   useEffect(() => {
     if (editorRef.current) {
-      if (editorRef.current.innerHTML !== value) {
-        if (!editorRef.current.innerHTML.trim() || !value.trim()) {
-          editorRef.current.innerHTML = value || '';
+      const formatted = convertMarkdownToRichHtml(value || '');
+      if (editorRef.current.innerHTML !== formatted) {
+        const currentClean = editorRef.current.innerHTML.trim();
+        if (!currentClean || currentClean === '<br>' || (value && value.includes('**'))) {
+          editorRef.current.innerHTML = formatted;
+          if (value && value.includes('**')) {
+            onChange(formatted);
+          }
         }
       }
     }
@@ -398,495 +418,447 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     setIsVideoModalOpen(false);
   };
 
-  // Close all popovers on mode switch
-  const handleSwitchMode = (mode: 'visual' | 'preview') => {
-    setShowColorPicker(false);
-    setShowHighlightPicker(false);
-    setShowEmojiPicker(false);
-    setViewMode(mode);
-  };
-
   return (
     <div className="w-full rounded-2xl border border-slate-300 bg-white shadow-xs overflow-hidden flex flex-col transition-all focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 relative">
       {/* ----------------------------------------------------------- */}
-      {/* TOP HEADER: Title & View Mode Selector (Visual & Pratinjau) */}
+      {/* TOP HEADER: Label & Live Preview Badge                      */}
       {/* ----------------------------------------------------------- */}
       <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
         <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+          <PenTool size={14} className="text-emerald-600" />
           <span>{label}</span>
         </label>
 
-        {/* Mode Tabs: Only Visual & Pratinjau */}
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl shadow-2xs">
+          <Sparkles size={12} />
+          <span>Live Editor (Pratinjau Langsung)</span>
+        </div>
+      </div>
+
+      {/* ----------------------------------------------------------- */}
+      {/* STICKY RICH TOOLBAR                                         */}
+      {/* ----------------------------------------------------------- */}
+      <div className="sticky top-0 z-20 px-3 py-2 bg-slate-100/95 backdrop-blur-md border-b border-slate-200 flex flex-wrap items-center gap-1.5 text-slate-700 select-none">
+        {/* GROUP 1: Heading Dropdown */}
+        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
+          <select
+            aria-label="Format Paragraf & Judul"
+            onChange={(e) => handleHeadingChange(e.target.value)}
+            defaultValue="p"
+            className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
+          >
+            <option value="p">Paragraf (Normal)</option>
+            <option value="h1">Heading 1 (Besar)</option>
+            <option value="h2">Heading 2 (Sedang)</option>
+            <option value="h3">Heading 3 (Kecil)</option>
+            <option value="h4">Heading 4</option>
+          </select>
+        </div>
+
+        {/* GROUP 2: Font Family Dropdown */}
+        <div className="hidden sm:flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
+          <select
+            aria-label="Jenis Font"
+            onChange={(e) => handleFontFamilyChange(e.target.value)}
+            defaultValue="default"
+            className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
+          >
+            <option value="default">Sans-Serif (Standar)</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Playfair Display', serif">Playfair Serif</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="'Courier New', monospace">Courier (Kode)</option>
+            <option value="Impact, fantasy">Impact</option>
+            <option value="'Comic Sans MS', cursive">Comic Sans</option>
+          </select>
+        </div>
+
+        {/* GROUP 3: Font Size Dropdown */}
+        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
+          <select
+            aria-label="Ukuran Huruf"
+            onChange={(e) => handleFontSizeChange(e.target.value)}
+            defaultValue="16px"
+            className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
+          >
+            <option value="12px">12px</option>
+            <option value="14px">14px</option>
+            <option value="16px">16px (Standar)</option>
+            <option value="18px">18px</option>
+            <option value="22px">22px</option>
+            <option value="28px">28px</option>
+            <option value="36px">36px</option>
+          </select>
+        </div>
+
+        <div className="w-px h-5 bg-slate-300 mx-0.5" />
+
+        {/* GROUP 4: Character Formatting (Bold, Italic, Underline, Strike, Sub, Super, Clear) */}
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
           <button
             type="button"
-            onClick={() => handleSwitchMode('visual')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              viewMode === 'visual'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            onClick={() => executeCommand('bold')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Tebal (Bold)"
           >
-            <PenTool size={12} />
-            <span>Visual</span>
+            <Bold size={15} />
           </button>
           <button
             type="button"
-            onClick={() => handleSwitchMode('preview')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              viewMode === 'preview'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            onClick={() => executeCommand('italic')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Miring (Italic)"
           >
-            <Eye size={12} />
-            <span>Pratinjau</span>
+            <Italic size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('underline')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Garis Bawah (Underline)"
+          >
+            <Underline size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('strikeThrough')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Coret (Strikethrough)"
+          >
+            <Strikethrough size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('subscript')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Teks Bawah (Subscript misal: H₂O)"
+          >
+            <Subscript size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('superscript')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+            title="Teks Atas (Superscript misal: m²)"
+          >
+            <Superscript size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('removeFormat')}
+            className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer"
+            title="Hapus Format (Clear Formatting)"
+          >
+            <RemoveFormatting size={15} />
+          </button>
+        </div>
+
+        <div className="w-px h-5 bg-slate-300 mx-0.5" />
+
+        {/* GROUP 5: Colors & Highlights Popovers (Safely Anchored on Mobile) */}
+        <div className="flex items-center gap-1 relative">
+          {/* Text Color Picker */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                saveSelection();
+                setShowColorPicker(!showColorPicker);
+                setShowHighlightPicker(false);
+                setShowEmojiPicker(false);
+              }}
+              className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-bold shadow-2xs cursor-pointer"
+              title="Warna Teks"
+            >
+              <span className="w-3.5 h-3.5 rounded-full border border-slate-300" style={{ backgroundColor: customColor }} />
+              <span className="hidden sm:inline">Warna</span>
+            </button>
+
+            {showColorPicker && (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowColorPicker(false)} />
+                <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:left-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-60 space-y-2.5 max-w-xs mx-auto">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700">Pilih Warna Teks</p>
+                    <button type="button" onClick={() => setShowColorPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {TEXT_COLORS.map(c => (
+                      <button
+                        key={c.color}
+                        type="button"
+                        onClick={() => applyTextColor(c.color)}
+                        className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer shadow-2xs"
+                        style={{ backgroundColor: c.color }}
+                        title={c.name}
+                      />
+                    ))}
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={customColor}
+                      onChange={e => setCustomColor(e.target.value)}
+                      className="w-7 h-7 rounded-lg cursor-pointer border border-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => applyTextColor(customColor)}
+                      className="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold cursor-pointer"
+                    >
+                      Terapkan
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Highlight / Stabilo Picker */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                saveSelection();
+                setShowHighlightPicker(!showHighlightPicker);
+                setShowColorPicker(false);
+                setShowEmojiPicker(false);
+              }}
+              className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-bold shadow-2xs cursor-pointer"
+              title="Stabilo / Latar Teks (Highlight)"
+            >
+              <span className="w-3.5 h-3.5 rounded-md bg-amber-300 border border-amber-400" />
+              <span className="hidden sm:inline">Stabilo</span>
+            </button>
+
+            {showHighlightPicker && (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowHighlightPicker(false)} />
+                <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:left-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-60 space-y-2.5 max-w-xs mx-auto">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700">Warna Stabilo</p>
+                    <button type="button" onClick={() => setShowHighlightPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {HIGHLIGHT_COLORS.map(c => (
+                      <button
+                        key={c.color}
+                        type="button"
+                        onClick={() => applyHighlightColor(c.color)}
+                        className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer shadow-2xs"
+                        style={{ backgroundColor: c.color }}
+                        title={c.name}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => applyHighlightColor('transparent')}
+                    className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Hapus Stabilo
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="w-px h-5 bg-slate-300 mx-0.5" />
+
+        {/* GROUP 6: Paragraph Alignments */}
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => executeCommand('justifyLeft')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Rata Kiri"
+          >
+            <AlignLeft size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('justifyCenter')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Rata Tengah"
+          >
+            <AlignCenter size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('justifyRight')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Rata Kanan"
+          >
+            <AlignRight size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('justifyFull')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Rata Kanan Kiri (Justify)"
+          >
+            <AlignJustify size={15} />
+          </button>
+        </div>
+
+        {/* GROUP 7: Lists, Quotes & Indentation */}
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => executeCommand('insertUnorderedList')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Daftar Simbol (Bullet List)"
+          >
+            <List size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('insertOrderedList')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Daftar Bernomor (Numbered List)"
+          >
+            <ListOrdered size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('formatBlock', '<blockquote>')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Kutipan Khusus (Blockquote)"
+          >
+            <Quote size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('insertHorizontalRule')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Garis Pembatas (Divider)"
+          >
+            <Minus size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('outdent')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Kurangi Indent"
+          >
+            <Outdent size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand('indent')}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+            title="Tambah Indent"
+          >
+            <Indent size={15} />
+          </button>
+        </div>
+
+        <div className="w-px h-5 bg-slate-300 mx-0.5" />
+
+        {/* GROUP 8: Links, Emoji, Image, Video Embeds */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={openLinkModal}
+            className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+            title="Sisipkan Tautan (Link)"
+          >
+            <Link2 size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={handleRemoveLink}
+            className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+            title="Hapus Tautan (Unlink)"
+          >
+            <Unlink size={15} />
+          </button>
+
+          {/* Emoji Picker Popover */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                saveSelection();
+                setShowEmojiPicker(!showEmojiPicker);
+                setShowColorPicker(false);
+                setShowHighlightPicker(false);
+              }}
+              className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+              title="Sisipkan Emoji"
+            >
+              <Smile size={15} className="text-amber-500" />
+            </button>
+
+            {showEmojiPicker && (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowEmojiPicker(false)} />
+                <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:right-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-72 space-y-2.5 max-w-sm mx-auto">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700">Koleksi Emoji Populer</p>
+                    <button type="button" onClick={() => setShowEmojiPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-8 gap-1.5 max-h-52 overflow-y-auto p-1">
+                    {POPULAR_EMOJIS.map(em => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => insertEmoji(em)}
+                        className="w-7 h-7 text-base rounded-lg hover:bg-slate-100 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Image Embed Button (Opens MediaUploaderModal) */}
+          <button
+            type="button"
+            onClick={openImageModal}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+            title="Unggah / Sisipkan Gambar Google Drive"
+          >
+            <ImageIcon size={14} />
+            <span className="hidden sm:inline">Gambar / Drive</span>
+          </button>
+
+          {/* Video Embed Button */}
+          <button
+            type="button"
+            onClick={openVideoModal}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+            title="Sisipkan Video YouTube atau Google Drive"
+          >
+            <Video size={14} />
+            <span className="hidden sm:inline">Video</span>
           </button>
         </div>
       </div>
 
       {/* ----------------------------------------------------------- */}
-      {/* STICKY RICH TOOLBAR (Only in Visual Mode)                   */}
-      {/* ----------------------------------------------------------- */}
-      {viewMode === 'visual' && (
-        <div className="sticky top-0 z-20 px-3 py-2 bg-slate-100/95 backdrop-blur-md border-b border-slate-200 flex flex-wrap items-center gap-1.5 text-slate-700 select-none">
-          {/* GROUP 1: Heading Dropdown */}
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
-            <select
-              aria-label="Format Paragraf & Judul"
-              onChange={(e) => handleHeadingChange(e.target.value)}
-              defaultValue="p"
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
-            >
-              <option value="p">Paragraf (Normal)</option>
-              <option value="h1">Heading 1 (Besar)</option>
-              <option value="h2">Heading 2 (Sedang)</option>
-              <option value="h3">Heading 3 (Kecil)</option>
-              <option value="h4">Heading 4</option>
-            </select>
-          </div>
-
-          {/* GROUP 2: Font Family Dropdown */}
-          <div className="hidden sm:flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
-            <select
-              aria-label="Jenis Font"
-              onChange={(e) => handleFontFamilyChange(e.target.value)}
-              defaultValue="default"
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
-            >
-              <option value="default">Sans-Serif (Standar)</option>
-              <option value="Georgia, serif">Georgia</option>
-              <option value="'Playfair Display', serif">Playfair Serif</option>
-              <option value="Arial, sans-serif">Arial</option>
-              <option value="'Courier New', monospace">Courier (Kode)</option>
-              <option value="Impact, fantasy">Impact</option>
-              <option value="'Comic Sans MS', cursive">Comic Sans</option>
-            </select>
-          </div>
-
-          {/* GROUP 3: Font Size Dropdown */}
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
-            <select
-              aria-label="Ukuran Huruf"
-              onChange={(e) => handleFontSizeChange(e.target.value)}
-              defaultValue="16px"
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-hidden cursor-pointer"
-            >
-              <option value="12px">12px</option>
-              <option value="14px">14px</option>
-              <option value="16px">16px (Standar)</option>
-              <option value="18px">18px</option>
-              <option value="22px">22px</option>
-              <option value="28px">28px</option>
-              <option value="36px">36px</option>
-            </select>
-          </div>
-
-          <div className="w-px h-5 bg-slate-300 mx-0.5" />
-
-          {/* GROUP 4: Character Formatting (Bold, Italic, Underline, Strike, Sub, Super, Clear) */}
-          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => executeCommand('bold')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Tebal (Bold)"
-            >
-              <Bold size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('italic')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Miring (Italic)"
-            >
-              <Italic size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('underline')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Garis Bawah (Underline)"
-            >
-              <Underline size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('strikeThrough')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Coret (Strikethrough)"
-            >
-              <Strikethrough size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('subscript')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Teks Bawah (Subscript misal: H₂O)"
-            >
-              <Subscript size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('superscript')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Teks Atas (Superscript misal: m²)"
-            >
-              <Superscript size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('removeFormat')}
-              className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer"
-              title="Hapus Format (Clear Formatting)"
-            >
-              <RemoveFormatting size={15} />
-            </button>
-          </div>
-
-          <div className="w-px h-5 bg-slate-300 mx-0.5" />
-
-          {/* GROUP 5: Colors & Highlights Popovers (Safely Anchored on Mobile) */}
-          <div className="flex items-center gap-1 relative">
-            {/* Text Color Picker */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  saveSelection();
-                  setShowColorPicker(!showColorPicker);
-                  setShowHighlightPicker(false);
-                  setShowEmojiPicker(false);
-                }}
-                className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-bold shadow-2xs cursor-pointer"
-                title="Warna Teks"
-              >
-                <span className="w-3.5 h-3.5 rounded-full border border-slate-300" style={{ backgroundColor: customColor }} />
-                <span className="hidden sm:inline">Warna</span>
-              </button>
-
-              {showColorPicker && (
-                <>
-                  <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowColorPicker(false)} />
-                  <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:left-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-60 space-y-2.5 max-w-xs mx-auto">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-700">Pilih Warna Teks</p>
-                      <button type="button" onClick={() => setShowColorPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {TEXT_COLORS.map(c => (
-                        <button
-                          key={c.color}
-                          type="button"
-                          onClick={() => applyTextColor(c.color)}
-                          className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer shadow-2xs"
-                          style={{ backgroundColor: c.color }}
-                          title={c.name}
-                        />
-                      ))}
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={customColor}
-                        onChange={e => setCustomColor(e.target.value)}
-                        className="w-7 h-7 rounded-lg cursor-pointer border border-slate-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => applyTextColor(customColor)}
-                        className="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold cursor-pointer"
-                      >
-                        Terapkan
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Highlight / Stabilo Picker */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  saveSelection();
-                  setShowHighlightPicker(!showHighlightPicker);
-                  setShowColorPicker(false);
-                  setShowEmojiPicker(false);
-                }}
-                className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-bold shadow-2xs cursor-pointer"
-                title="Stabilo / Latar Teks (Highlight)"
-              >
-                <span className="w-3.5 h-3.5 rounded-md bg-amber-300 border border-amber-400" />
-                <span className="hidden sm:inline">Stabilo</span>
-              </button>
-
-              {showHighlightPicker && (
-                <>
-                  <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowHighlightPicker(false)} />
-                  <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:left-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-60 space-y-2.5 max-w-xs mx-auto">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-700">Warna Stabilo</p>
-                      <button type="button" onClick={() => setShowHighlightPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {HIGHLIGHT_COLORS.map(c => (
-                        <button
-                          key={c.color}
-                          type="button"
-                          onClick={() => applyHighlightColor(c.color)}
-                          className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer shadow-2xs"
-                          style={{ backgroundColor: c.color }}
-                          title={c.name}
-                        />
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => applyHighlightColor('transparent')}
-                      className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-                    >
-                      Hapus Stabilo
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="w-px h-5 bg-slate-300 mx-0.5" />
-
-          {/* GROUP 6: Paragraph Alignments */}
-          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => executeCommand('justifyLeft')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Rata Kiri"
-            >
-              <AlignLeft size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('justifyCenter')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Rata Tengah"
-            >
-              <AlignCenter size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('justifyRight')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Rata Kanan"
-            >
-              <AlignRight size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('justifyFull')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Rata Kanan Kiri (Justify)"
-            >
-              <AlignJustify size={15} />
-            </button>
-          </div>
-
-          {/* GROUP 7: Lists, Quotes & Indentation */}
-          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => executeCommand('insertUnorderedList')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Daftar Simbol (Bullet List)"
-            >
-              <List size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('insertOrderedList')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Daftar Bernomor (Numbered List)"
-            >
-              <ListOrdered size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('formatBlock', '<blockquote>')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Kutipan Khusus (Blockquote)"
-            >
-              <Quote size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('insertHorizontalRule')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Garis Pembatas (Divider)"
-            >
-              <Minus size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('outdent')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Kurangi Indent"
-            >
-              <Outdent size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => executeCommand('indent')}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="Tambah Indent"
-            >
-              <Indent size={15} />
-            </button>
-          </div>
-
-          <div className="w-px h-5 bg-slate-300 mx-0.5" />
-
-          {/* GROUP 8: Links, Emoji, Image, Video Embeds */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={openLinkModal}
-              className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
-              title="Sisipkan Tautan (Link)"
-            >
-              <Link2 size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={handleRemoveLink}
-              className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
-              title="Hapus Tautan (Unlink)"
-            >
-              <Unlink size={15} />
-            </button>
-
-            {/* Emoji Picker Popover (Fixed on mobile to prevent overflow) */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  saveSelection();
-                  setShowEmojiPicker(!showEmojiPicker);
-                  setShowColorPicker(false);
-                  setShowHighlightPicker(false);
-                }}
-                className="p-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
-                title="Sisipkan Emoji"
-              >
-                <Smile size={15} className="text-amber-500" />
-              </button>
-
-              {showEmojiPicker && (
-                <>
-                  <div className="fixed inset-0 z-40 bg-black/10 sm:hidden" onClick={() => setShowEmojiPicker(false)} />
-                  <div className="fixed inset-x-4 top-24 sm:top-full sm:inset-x-auto sm:right-0 mt-1.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 w-auto sm:w-72 space-y-2.5 max-w-sm mx-auto">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-700">Koleksi Emoji Populer</p>
-                      <button type="button" onClick={() => setShowEmojiPicker(false)} className="p-1 text-slate-400 hover:text-slate-700 sm:hidden">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-8 gap-1.5 max-h-52 overflow-y-auto p-1">
-                      {POPULAR_EMOJIS.map(em => (
-                        <button
-                          key={em}
-                          type="button"
-                          onClick={() => insertEmoji(em)}
-                          className="w-7 h-7 text-base rounded-lg hover:bg-slate-100 flex items-center justify-center cursor-pointer transition-transform active:scale-95"
-                        >
-                          {em}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Image Embed Button (Opens MediaUploaderModal) */}
-            <button
-              type="button"
-              onClick={openImageModal}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
-              title="Unggah / Sisipkan Gambar Google Drive"
-            >
-              <ImageIcon size={14} />
-              <span className="hidden sm:inline">Gambar / Drive</span>
-            </button>
-
-            {/* Video Embed Button */}
-            <button
-              type="button"
-              onClick={openVideoModal}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
-              title="Sisipkan Video YouTube atau Google Drive"
-            >
-              <Video size={14} />
-              <span className="hidden sm:inline">Video</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------- */}
-      {/* MAIN CONTENT AREA: Visual / Preview                         */}
+      {/* MAIN CONTENT AREA: Pure Live Editor Canvas                  */}
       {/* ----------------------------------------------------------- */}
       <div className="relative flex-1 bg-white">
-        {viewMode === 'visual' ? (
-          <div
-            ref={editorRef}
-            contentEditable
-            onInput={handleEditorInput}
-            onPaste={handlePaste}
-            data-placeholder={placeholder}
-            className="w-full p-4 sm:p-5 outline-hidden overflow-y-auto text-slate-800 text-sm sm:text-base leading-relaxed font-sans empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none focus:ring-0 [&_h1]:text-2xl [&_h1]:font-black [&_h1]:text-slate-900 [&_h1]:my-4 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:my-3 [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-slate-800 [&_h3]:my-2 [&_p]:my-2.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:my-3 [&_blockquote]:bg-emerald-50/40 [&_blockquote]:py-1.5 [&_blockquote]:rounded-r-xl [&_hr]:my-4 [&_hr]:border-slate-200"
-            style={{ minHeight }}
-          />
-        ) : (
-          /* Preview Mode */
-          <div className="p-5 sm:p-6 bg-slate-50/60 min-h-[350px] overflow-y-auto">
-            <div className="max-w-3xl mx-auto bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100 text-xs font-bold text-slate-500">
-                <Eye size={14} className="text-emerald-600" />
-                <span>Pratinjau Tampilan Materi Siswa</span>
-              </div>
-              <div
-                className="prose prose-slate max-w-none text-slate-800 text-sm sm:text-base leading-relaxed font-sans [&_h1]:text-2xl [&_h1]:font-black [&_h1]:text-slate-900 [&_h1]:my-4 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:my-3 [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-slate-800 [&_h3]:my-2 [&_p]:my-2.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:my-3 [&_blockquote]:bg-emerald-50/40 [&_blockquote]:py-1.5 [&_blockquote]:rounded-r-xl [&_hr]:my-4 [&_hr]:border-slate-200"
-                dangerouslySetInnerHTML={{ __html: value || '<p class="text-slate-400 italic">Belum ada konten materi.</p>' }}
-              />
-            </div>
-          </div>
-        )}
+        <div
+          ref={editorRef}
+          contentEditable
+          onInput={handleEditorInput}
+          onPaste={handlePaste}
+          data-placeholder={placeholder}
+          className="w-full p-4 sm:p-5 outline-hidden overflow-y-auto text-slate-800 text-sm sm:text-base leading-relaxed font-sans empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none focus:ring-0 [&_h1]:text-2xl [&_h1]:font-black [&_h1]:text-slate-900 [&_h1]:my-4 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:my-3 [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-slate-800 [&_h3]:my-2 [&_p]:my-2.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:my-3 [&_blockquote]:bg-emerald-50/40 [&_blockquote]:py-1.5 [&_blockquote]:rounded-r-xl [&_hr]:my-4 [&_hr]:border-slate-200 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-xl [&_img]:shadow-md [&_img]:my-3 [&_iframe]:w-full [&_iframe]:rounded-xl [&_iframe]:shadow-md"
+          style={{ minHeight }}
+        />
       </div>
 
       {/* ----------------------------------------------------------- */}

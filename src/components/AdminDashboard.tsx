@@ -4443,12 +4443,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {isSavingPage ? (
                     <>
                       <Loader2 size={15} className="animate-spin" />
-                      <span>{pageEditorTab === 'game' ? 'Sedang Menyimpan Game...' : 'Sedang Menyimpan Halaman...'}</span>
+                      <span>Menyimpan Perubahan...</span>
                     </>
                   ) : (
                     <>
                       <Save size={15} />
-                      <span>{pageEditorTab === 'game' ? 'Simpan Game ke Firebase' : 'Simpan Halaman ke Firebase'}</span>
+                      <span>Simpan Perubahan</span>
                     </>
                   )}
                 </button>
