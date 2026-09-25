@@ -24,7 +24,7 @@ interface CustomGameRendererProps {
 export const CustomGameRenderer: React.FC<CustomGameRendererProps> = ({
   code,
   gameType = 'custom_html',
-  title = 'Game Edukasi Interaktif',
+  title = 'Game Interaktif',
   instructions,
   assets,
   onComplete,
@@ -314,12 +314,7 @@ export const CustomGameRenderer: React.FC<CustomGameRendererProps> = ({
       </div>
 
       {/* Bottom Completion Action / Status Bar */}
-      <div className="bg-slate-900 px-4 py-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <Code2 size={13} className="text-indigo-400" />
-          <span className="text-[11px]">Interaktif HTML5/TSX Engine</span>
-        </span>
-
+      <div className="bg-slate-900 px-4 py-2.5 border-t border-slate-800 flex items-center justify-end text-xs text-slate-400">
         <button
           type="button"
           onClick={() => {

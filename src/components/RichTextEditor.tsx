@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 import {
   Bold,
   Italic,
@@ -898,23 +899,23 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Teks Tautan</label>
-                <input
-                  type="text"
+                <AutoResizeTextarea
+                  rows={1}
                   value={linkText}
                   onChange={e => setLinkText(e.target.value)}
                   placeholder="Contoh: Klik untuk baca jurnal"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                  className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
                 />
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">URL Target</label>
-                <input
-                  type="text"
+                <AutoResizeTextarea
+                  rows={1}
                   value={linkUrl}
                   onChange={e => setLinkUrl(e.target.value)}
                   placeholder="https://contoh.com/materi"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                  className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
                 />
               </div>
 
@@ -974,12 +975,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <label className="block font-bold text-slate-700 mb-1">
                   URL Video (YouTube / Google Drive / MP4)
                 </label>
-                <input
-                  type="text"
+                <AutoResizeTextarea
+                  rows={1}
                   value={videoUrlInput}
                   onChange={e => setVideoUrlInput(e.target.value)}
                   placeholder="https://youtu.be/... atau https://drive.google.com/file/d/.../view"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-rose-500 outline-hidden"
+                  className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-rose-500 outline-hidden"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
                   Mendukung link YouTube (termasuk Shorts) & Google Drive Video secara otomatis.
@@ -988,12 +989,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Keterangan Video (Opsional)</label>
-                <input
-                  type="text"
+                <AutoResizeTextarea
+                  rows={1}
                   value={videoCaption}
                   onChange={e => setVideoCaption(e.target.value)}
                   placeholder="Contoh: Video Praktik Pembuatan Pupuk Kompos"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-rose-500 outline-hidden"
+                  className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-rose-500 outline-hidden"
                 />
               </div>
             </div>

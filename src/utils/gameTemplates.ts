@@ -10,9 +10,9 @@ export interface GameTemplate {
 export const GAME_TEMPLATES: GameTemplate[] = [
   {
     id: 'word-guess',
-    name: 'Game Tebak Kata (Word Guess)',
+    name: 'Tebak Kata',
     type: 'custom_html',
-    category: 'Bahasa / Istilah',
+    category: 'Edukasi',
     description: 'Siswa menebak huruf untuk mengungkap kata misteri berdasarkan petunjuk.',
     code: `<!DOCTYPE html>
 <html lang="id">
@@ -143,9 +143,9 @@ export const GAME_TEMPLATES: GameTemplate[] = [
   },
   {
     id: 'quiz-arcade',
-    name: 'Kuis Cepat Berwaktu (Speed Quiz)',
+    name: 'Kuis Cepat Berwaktu',
     type: 'custom_html',
-    category: 'Evaluasi / Kuis Interaktif',
+    category: 'Edukasi',
     description: 'Game kuis 4 opsi dengan animasi waktu mundur dan akumulasi skor.',
     code: `<!DOCTYPE html>
 <html lang="id">
@@ -301,9 +301,9 @@ export const GAME_TEMPLATES: GameTemplate[] = [
   },
   {
     id: 'canvas-catcher',
-    name: 'Game Tangkap Bintang (Canvas Arcade)',
+    name: 'Tangkap Bintang',
     type: 'custom_html',
-    category: 'Arcade / Ketangkasan',
+    category: 'Edukasi',
     description: 'Game grafis canvas interaktif: Gerakkan keranjang ke kiri/kanan untuk menangkap bintang pengetahuan.',
     code: `<!DOCTYPE html>
 <html lang="id">
@@ -475,9 +475,9 @@ export const GAME_TEMPLATES: GameTemplate[] = [
   },
   {
     id: 'react-tsx-flashcard',
-    name: 'Game Kartu Interaktif (React / TSX)',
+    name: 'Flashcard Interaktif',
     type: 'custom_tsx',
-    category: 'React / TSX Component',
+    category: 'Edukasi',
     description: 'Komponen React interaktif berbasis TSX dengan kartu berbalik (flip card), status pemahaman, dan perolehan skor.',
     code: `import React, { useState } from 'react';
 

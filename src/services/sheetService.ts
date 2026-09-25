@@ -545,25 +545,63 @@ export const sheetService = {
         }
       }
 
-      let res;
+      let text = '';
+      let lastStatus = 0;
+
+      // 1. Direct fetch
       try {
-        res = await fetch(targetUrl);
+        const directRes = await fetch(targetUrl);
+        lastStatus = directRes.status;
+        if (directRes.ok) {
+          const directText = await directRes.text();
+          if (directText && directText.length > 10 && !directText.includes('<!DOCTYPE html>')) {
+            text = directText;
+          }
+        }
       } catch (fetchErr) {
         console.warn("Direct fetch failed, trying CORS proxy fallback...", fetchErr);
+      }
+
+      // 2. Proxy 1 fallback (corsproxy.io)
+      if (!text) {
         try {
           const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-          res = await fetch(proxyUrl);
+          const proxyRes = await fetch(proxyUrl);
+          lastStatus = proxyRes.status;
+          if (proxyRes.ok) {
+            const proxyText = await proxyRes.text();
+            if (proxyText && proxyText.length > 10 && !proxyText.includes('<!DOCTYPE html>')) {
+              text = proxyText;
+            }
+          }
         } catch (proxyErr) {
           console.warn("corsproxy.io failed, trying allorigins fallback...", proxyErr);
-          const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-          res = await fetch(proxyUrl2);
         }
       }
 
-      if (!res || !res.ok) {
-        return { success: false, message: `Gagal mengunduh CSV. HTTP Status: ${res ? res.status : 'Unknown'}` };
+      // 3. Proxy 2 fallback (allorigins)
+      if (!text) {
+        try {
+          const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+          const proxyRes2 = await fetch(proxyUrl2);
+          lastStatus = proxyRes2.status;
+          if (proxyRes2.ok) {
+            const proxyText2 = await proxyRes2.text();
+            if (proxyText2 && proxyText2.length > 10 && !proxyText2.includes('<!DOCTYPE html>')) {
+              text = proxyText2;
+            }
+          }
+        } catch (proxyErr2) {
+          console.warn("allorigins failed...", proxyErr2);
+        }
       }
-      const text = await res.text();
+
+      if (!text) {
+        return { 
+          success: false, 
+          message: `Gagal membaca isi data Google Spreadsheet (Status: ${lastStatus || 'Koneksi Dibatasi'}). Pastikan file diatur ke "Siapa saja yang memiliki link" atau gunakan fitur Publish to web (CSV).` 
+        };
+      }
       
       // Parse CSV rows safely
       const lines: string[][] = [];

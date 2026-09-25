@@ -23,6 +23,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 
 export type ImageLayoutType = 'single' | 'grid2' | 'grid3' | 'floatLeft' | 'floatRight';
 
@@ -572,12 +573,12 @@ export const MediaUploaderModal: React.FC<MediaUploaderModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">Nama File / Alt Text</label>
-                    <input
-                      type="text"
+                    <AutoResizeTextarea
+                      rows={1}
                       value={customFileName}
                       onChange={(e) => setCustomFileName(e.target.value)}
                       placeholder="Misal: Struktur Daun Monokotil"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                      className="w-full max-w-full min-w-0 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden"
                     />
                   </div>
 
@@ -631,12 +632,12 @@ export const MediaUploaderModal: React.FC<MediaUploaderModalProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="relative flex-1">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={gallerySearch}
                     onChange={(e) => setGallerySearch(e.target.value)}
                     placeholder="Cari nama gambar di Google Drive..."
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                    className="w-full max-w-full min-w-0 pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
                   />
                 </div>
 
@@ -744,15 +745,15 @@ export const MediaUploaderModal: React.FC<MediaUploaderModalProps> = ({
                   Tempel URL Gambar Eksternal / Google Drive
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    type="url"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={externalUrlInput}
                     onChange={(e) => {
                       setExternalUrlInput(e.target.value);
                       setUrlPreviewStatus('idle');
                     }}
                     placeholder="https://images.unsplash.com/... atau https://drive.google.com/file/d/.../view"
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                    className="flex-1 min-w-0 max-w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
                   />
                   <button
                     type="button"
@@ -865,12 +866,12 @@ export const MediaUploaderModal: React.FC<MediaUploaderModalProps> = ({
               <label className="block font-bold text-slate-700 mb-1">
                 Keterangan Gambar / Caption (Opsional)
               </label>
-              <input
-                type="text"
+              <AutoResizeTextarea
+                rows={1}
                 value={imageCaption}
                 onChange={(e) => setImageCaption(e.target.value)}
                 placeholder="Contoh: Gambar 1.1 Tahapan Pembelahan Sel Mitosis"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-hidden"
               />
             </div>
 

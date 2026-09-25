@@ -31,6 +31,7 @@ import {
   FolderArchive
 } from 'lucide-react';
 import { AppModule, GameItem, GameItemElement, ModulePage } from '../types';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 import { CustomGameRenderer } from './CustomGameRenderer';
 import { GAME_TEMPLATES, GameTemplate } from '../utils/gameTemplates';
 import { compressImage } from '../utils/imageCompressor';
@@ -55,6 +56,49 @@ interface AdminGameManagerProps {
   isSyncing: boolean;
   showNotification: (text: string, type?: 'success' | 'error' | 'info') => void;
 }
+
+export const formatCleanGameTitle = (rawTitle?: string): string => {
+  if (!rawTitle) return '';
+  return rawTitle
+    .replace(/^Game\s+Edukasi:\s*/i, '')
+    .replace(/^Game\s+Edukasi\s*/i, '')
+    .replace(/^Game\s+Interaktif:\s*/i, '')
+    .replace(/^Game\s+/i, '')
+    .replace(/\s*\([^)]*modular[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*memory\s*game[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*word\s*guess[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*speed\s*quiz[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*canvas\s*arcade[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*react\s*\/\s*tsx[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*game\s*\d*[^)]*\)/gi, '')
+    .replace(/:\s*IPA\s*Hijau/gi, '')
+    .replace(/:\s*Fotosintesis/gi, '')
+    .trim();
+};
+
+export const formatCleanGameCategory = (cat?: string): string => {
+  if (!cat) return 'Edukasi';
+  if (/pertanian|berkebun|rempah|tanaman pangan/i.test(cat)) {
+    return 'Edukasi';
+  }
+  return cat.replace(/modular/gi, '').trim() || 'Edukasi';
+};
+
+export const formatCleanGameDescription = (desc?: string, title?: string): string => {
+  const cleanTitle = formatCleanGameTitle(title);
+  if (!desc) return cleanTitle || 'Game Interaktif';
+  if (
+    desc.includes('tomat, cabai, sawi') ||
+    desc.includes('kangkung, bayam, pakcoy') ||
+    desc.includes('kunyit, jahe, serai') ||
+    desc.includes('Modular Game') ||
+    desc.includes('11 tingkatan level') ||
+    desc.includes('10 tingkatan level')
+  ) {
+    return cleanTitle;
+  }
+  return desc.replace(/modular/gi, '').trim();
+};
 
 export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
   games,
@@ -95,18 +139,26 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
   const iconInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
-  // Extract unique categories
+  // Extract unique categories (sanitized)
   const categories = Array.from(
-    new Set(games.map(g => g.category || 'Umum').filter(Boolean))
+    new Set(
+      games
+        .map(g => formatCleanGameCategory(g.category))
+        .filter(Boolean)
+    )
   );
 
   // Filtered games
   const filteredGames = games.filter(g => {
+    const cleanTitle = formatCleanGameTitle(g.title);
+    const cleanDesc = formatCleanGameDescription(g.description, g.title);
+    const cleanCat = formatCleanGameCategory(g.category);
+
     const matchSearch =
       !searchQuery ||
-      g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (g.description && g.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (g.category && g.category.toLowerCase().includes(searchQuery.toLowerCase()));
+      cleanTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cleanDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cleanCat.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchType =
       filterType === 'ALL'
@@ -115,7 +167,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
         ? g.type.startsWith('modular_') || g.type === 'memory'
         : g.type === filterType;
 
-    const matchCat = filterCategory === 'ALL' || g.category === filterCategory;
+    const matchCat = filterCategory === 'ALL' || cleanCat === filterCategory;
 
     return matchSearch && matchType && matchCat;
   });
@@ -367,39 +419,14 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Kelola Game Edukasi</h2>
+            <h2 className="text-lg font-bold text-slate-900">Kelola Game</h2>
             <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
               {games.length} Game
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Kelola game interaktif, aset gambar tersimpan di Firebase, dan sematkan ke materi modul.
-          </p>
         </div>
 
         <div className="flex items-center flex-wrap gap-2">
-          {/* Reset / Reload Defaults */}
-          <button
-            onClick={onResetDefaultGames}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all cursor-pointer disabled:opacity-50"
-            title="Reset game bawaan"
-          >
-            <RotateCcw size={13} className={isSyncing ? 'animate-spin' : ''} />
-            <span>Reset Bawaan</span>
-          </button>
-
-          {/* Sync All to Cloud Firebase */}
-          <button
-            onClick={onSyncAllGames}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl bg-purple-600 hover:bg-purple-700 text-white transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            title="Sinkronkan game ke Firebase"
-          >
-            <Cloud size={14} className={isSyncing ? 'animate-spin' : ''} />
-            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Game'}</span>
-          </button>
-
           {/* Add New Game */}
           <button
             onClick={handleOpenCreate}
@@ -432,7 +459,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
           </span>
         </div>
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-          <span className="text-[11px] font-medium text-slate-500 block">Modular Bawaan</span>
+          <span className="text-[11px] font-medium text-slate-500 block">Game Interaktif</span>
           <span className="text-lg font-bold text-emerald-700">
             {games.filter(g => g.type.startsWith('modular_') || g.type === 'memory').length}
           </span>
@@ -466,7 +493,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
               <option value="ALL">Semua Format</option>
               <option value="custom_html">HTML5 + JS</option>
               <option value="custom_tsx">React / TSX</option>
-              <option value="modular">Modular Game</option>
+              <option value="modular">Game Interaktif</option>
             </select>
           </div>
 
@@ -502,24 +529,20 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
           <div className="pt-2 flex justify-center gap-2">
             <button
               onClick={handleOpenCreate}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
             >
               + Tambah Game
-            </button>
-            <button
-              onClick={onResetDefaultGames}
-              className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold"
-            >
-              Reset Bawaan
             </button>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filteredGames.map(game => {
-            const isModular = game.type.startsWith('modular_') || game.type === 'memory';
             const isHtml = game.type === 'custom_html';
             const isTsx = game.type === 'custom_tsx';
+            const displayTitle = formatCleanGameTitle(game.title);
+            const displayCategory = formatCleanGameCategory(game.category);
+            const displayDesc = formatCleanGameDescription(game.description, game.title);
 
             return (
               <div
@@ -530,7 +553,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                   {/* Category & Format Badges */}
                   <div className="flex items-center justify-between gap-1.5">
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 truncate">
-                      {game.category || 'Edukasi'}
+                      {displayCategory}
                     </span>
 
                     <span
@@ -542,7 +565,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                           : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                       }`}
                     >
-                      {isHtml ? 'HTML5' : isTsx ? 'React TSX' : 'Modular'}
+                      {isHtml ? 'HTML5' : isTsx ? 'React TSX' : 'Interaktif'}
                     </span>
                   </div>
 
@@ -550,65 +573,42 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                   <div>
                     <h3 className="text-xs font-bold text-slate-900 group-hover:text-purple-700 transition-colors flex items-center gap-1.5">
                       <Gamepad2 size={14} className="text-purple-600 shrink-0" />
-                      <span className="truncate">{game.title}</span>
+                      <span className="truncate">{displayTitle}</span>
                     </h3>
                     <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-snug">
-                      {game.description || 'Game interaktif siap disematkan ke modul.'}
+                      {displayDesc}
                     </p>
-                  </div>
-
-                  {/* Meta: Pass Score */}
-                  <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                    <span>
-                      Target: <strong className="text-slate-700">{isModular ? 'Level 4+' : `${game.passScore || 100} Poin`}</strong>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {game.code ? `${game.code.length} Karakter` : 'Bawaan'}
-                    </span>
                   </div>
                 </div>
 
-                {/* Card Action Buttons */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {/* Play / Test Button */}
-                    <button
-                      onClick={() => handleOpenPlaytest(game)}
-                      className="flex items-center justify-center gap-1 py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <Play size={12} />
-                      <span>Uji Coba</span>
-                    </button>
+                {/* Card Action Buttons: Uji Coba and Edit side-by-side */}
+                <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                  {/* Play / Test Button */}
+                  <button
+                    onClick={() => handleOpenPlaytest(game)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    <Play size={12} />
+                    <span>Uji Coba</span>
+                  </button>
 
-                    {/* Embed to Material */}
-                    <button
-                      onClick={() => handleOpenEmbed(game)}
-                      className="flex items-center justify-center gap-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <BookOpen size={12} />
-                      <span>Sematkan</span>
-                    </button>
-                  </div>
+                  {/* Edit Game */}
+                  <button
+                    onClick={() => handleOpenEdit(game)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    <Edit size={12} />
+                    <span>Edit</span>
+                  </button>
 
-                  <div className="flex items-center justify-between pt-0.5">
-                    {/* Edit Game */}
-                    <button
-                      onClick={() => handleOpenEdit(game)}
-                      className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-purple-600 px-2 py-0.5 rounded-md hover:bg-slate-100 transition-all cursor-pointer"
-                    >
-                      <Edit size={12} />
-                      <span>Edit</span>
-                    </button>
-
-                    {/* Delete Game */}
-                    <button
-                      onClick={() => onDeleteGame(game.id)}
-                      className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-all cursor-pointer"
-                      title="Hapus game"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  {/* Delete Game */}
+                  <button
+                    onClick={() => onDeleteGame(game.id)}
+                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer shrink-0"
+                    title="Hapus game"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             );
@@ -695,7 +695,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                       : 'border-transparent text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Pratinjau
+                  Lihat
                 </button>
               </div>
 
@@ -707,23 +707,23 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">Judul Game</label>
-                        <input
-                          type="text"
+                        <AutoResizeTextarea
+                          rows={1}
                           value={editingGame.title}
                           onChange={e => setEditingGame({ ...editingGame, title: e.target.value })}
                           placeholder="Judul game..."
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:bg-white focus:border-purple-500 outline-hidden"
+                          className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:bg-white focus:border-purple-500 outline-hidden"
                         />
                       </div>
 
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">Kategori</label>
-                        <input
-                          type="text"
+                        <AutoResizeTextarea
+                          rows={1}
                           value={editingGame.category || ''}
                           onChange={e => setEditingGame({ ...editingGame, category: e.target.value })}
                           placeholder="Kategori game..."
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:border-purple-500 outline-hidden"
+                          className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:border-purple-500 outline-hidden"
                         />
                       </div>
                     </div>
@@ -768,23 +768,23 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
 
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Deskripsi</label>
-                      <textarea
-                        rows={2}
+                      <AutoResizeTextarea
+                        rows={1}
                         value={editingGame.description || ''}
                         onChange={e => setEditingGame({ ...editingGame, description: e.target.value })}
                         placeholder="Deskripsi singkat game..."
-                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white outline-hidden"
+                        className="w-full max-w-full min-w-0 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white outline-hidden"
                       />
                     </div>
 
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Petunjuk Permainan</label>
-                      <textarea
-                        rows={2}
+                      <AutoResizeTextarea
+                        rows={1}
                         value={editingGame.instructions || ''}
                         onChange={e => setEditingGame({ ...editingGame, instructions: e.target.value })}
                         placeholder="Instruksi untuk siswa..."
-                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white outline-hidden"
+                        className="w-full max-w-full min-w-0 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white outline-hidden"
                       />
                     </div>
 
@@ -1022,12 +1022,12 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 flex-1 min-w-0">
-                                  <input
-                                    type="text"
+                                  <AutoResizeTextarea
+                                    rows={1}
                                     value={item.name}
                                     onChange={e => handleUpdateItem(idx, { name: e.target.value })}
                                     placeholder="Nama Elemen"
-                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-semibold focus:bg-white outline-hidden"
+                                    className="w-full max-w-full min-w-0 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-semibold focus:bg-white outline-hidden"
                                   />
                                   <div className="flex items-center gap-1">
                                     <input
@@ -1097,8 +1097,8 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                       </span>
                     </div>
 
-                    <textarea
-                      rows={16}
+                    <AutoResizeTextarea
+                      rows={8}
                       value={editingGame.code || ''}
                       onChange={e => setEditingGame({ ...editingGame, code: e.target.value })}
                       placeholder="Kode HTML/JavaScript atau React TSX..."
@@ -1173,7 +1173,7 @@ export const AdminGameManager: React.FC<AdminGameManagerProps> = ({
                       onClick={() => setEditorTab('preview')}
                       className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold transition-all"
                     >
-                      Pratinjau
+                      Lihat
                     </button>
                   )}
                   <button

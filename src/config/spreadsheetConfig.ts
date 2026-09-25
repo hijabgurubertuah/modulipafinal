@@ -59,10 +59,28 @@ export function resolveCsvUrl(input?: string): string {
  */
 export function resolveSheetUrl(input?: string): string {
   const val = (input || '').trim();
-  if (!val) return '';
+  if (!val) {
+    if (SPREADSHEET_CONFIG.spreadsheetId) {
+      return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_CONFIG.spreadsheetId}/edit`;
+    }
+    return '';
+  }
+
+  // Jika URL publikasi web (/d/e/2PACX-...) dan kita punya spreadsheet ID cadangan
+  if ((val.includes('/d/e/2PACX-') || val.startsWith('2PACX-')) && SPREADSHEET_CONFIG.spreadsheetId) {
+    return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_CONFIG.spreadsheetId}/edit`;
+  }
+
+  // Jika berupa URL Google Spreadsheet biasa
+  const idMatch = val.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (idMatch && idMatch[1] && !idMatch[1].startsWith('e')) {
+    return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/edit`;
+  }
+
   if (val.startsWith('http://') || val.startsWith('https://')) {
     return val;
   }
+
   return `https://docs.google.com/spreadsheets/d/${val}/edit`;
 }
 

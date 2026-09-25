@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 import {
   Code2,
   Copy,
@@ -176,12 +177,12 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
             <label className="block text-xs font-bold text-slate-700 mb-1">
               URL Web App (<code className="text-indigo-600 font-mono text-[11px]">/exec</code>)
             </label>
-            <input
-              type="url"
+            <AutoResizeTextarea
+              rows={1}
               value={scriptUrlInput}
               onChange={(e) => setScriptUrlInput(e.target.value)}
               placeholder="https://script.google.com/macros/s/.../exec"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
+              className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
             />
           </div>
 
@@ -189,12 +190,12 @@ export const AdminAppScriptManager: React.FC<AdminAppScriptManagerProps> = ({
             <label className="block text-xs font-bold text-slate-700 mb-1">
               ID Folder Google Drive (Opsional)
             </label>
-            <input
-              type="text"
+            <AutoResizeTextarea
+              rows={1}
               value={folderIdInput}
               onChange={(e) => setFolderIdInput(e.target.value)}
               placeholder="15u_RpWrMHwTRDau0H..."
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
+              className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-hidden font-medium"
             />
           </div>
         </div>

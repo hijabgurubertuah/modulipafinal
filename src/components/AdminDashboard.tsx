@@ -5,6 +5,7 @@ import {
   HelpCircle,
   Users,
   GraduationCap,
+  School,
   BarChart3,
   FileSpreadsheet,
   Settings,
@@ -78,11 +79,16 @@ import {
 import { firestoreService } from '../services/firestoreService';
 import { sheetService } from '../services/sheetService';
 import { DEFAULT_SETTINGS } from '../services/defaultData';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 import { extractSpreadsheetId } from '../services/googleSheetsDirectService';
-import { resolveCsvUrl, resolveSheetUrl } from '../config/spreadsheetConfig';
+import { resolveCsvUrl, resolveSheetUrl, SPREADSHEET_CONFIG } from '../config/spreadsheetConfig';
 import { IconComponent } from './IconComponent';
 import { VideoPlayer, getCleanVideoEmbedUrl } from './VideoPlayer';
 import { CustomGameRenderer } from './CustomGameRenderer';
+import { Game1 } from './Game1';
+import { Game2 } from './Game2';
+import { Game3 } from './Game3';
+import { MemoryGame } from './MemoryGame';
 import { AdminGameManager } from './AdminGameManager';
 import { FirebaseUsageDashboard } from './FirebaseUsageDashboard';
 import { GAME_TEMPLATES } from '../utils/gameTemplates';
@@ -91,6 +97,25 @@ import { normalizeImageUrl, testImageLoad } from '../utils/imageUrlHelper';
 import { SyncDialog } from './SyncDialog';
 import { RichTextEditor } from './RichTextEditor';
 import { AdminAppScriptManager } from './AdminAppScriptManager';
+
+export const formatCleanGameTitle = (rawTitle?: string): string => {
+  if (!rawTitle) return '';
+  return rawTitle
+    .replace(/^Game\s+Edukasi:\s*/i, '')
+    .replace(/^Game\s+Edukasi\s*/i, '')
+    .replace(/^Game\s+Interaktif:\s*/i, '')
+    .replace(/^Game\s+/i, '')
+    .replace(/\s*\([^)]*modular[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*memory\s*game[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*word\s*guess[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*speed\s*quiz[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*canvas\s*arcade[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*react\s*\/\s*tsx[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*game\s*\d*[^)]*\)/gi, '')
+    .replace(/:\s*IPA\s*Hijau/gi, '')
+    .replace(/:\s*Fotosintesis/gi, '')
+    .trim();
+};
 
 interface AdminDashboardProps {
   onBackToStudentView: (targetModule?: number) => void;
@@ -225,6 +250,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isPullingCsv, setIsPullingCsv] = useState<boolean>(false);
   const [spreadsheetInput, setSpreadsheetInput] = useState<string>('');
   const [csvInput, setCsvInput] = useState<string>('');
+  const [previewStudentClassFilter, setPreviewStudentClassFilter] = useState<string>('ALL');
+  const [previewStudentSearch, setPreviewStudentSearch] = useState<string>('');
+  const [isAutoPullingSheet, setIsAutoPullingSheet] = useState<boolean>(false);
 
   // --- Load Initial Data ---
   const loadAllData = async () => {
@@ -595,7 +623,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenPageEditor = (page?: ModulePage) => {
     if (!editingModule) return;
     if (page) {
-      setEditingPage(JSON.parse(JSON.stringify(page)));
+      const pCopy = JSON.parse(JSON.stringify(page));
+      if (pCopy.isGame) {
+        const matchedGame = games.find(g => g.id === pCopy.gameId);
+        const matchedTemplate = GAME_TEMPLATES.find(t => t.id === pCopy.gameId || t.type === pCopy.gameType);
+        if (!pCopy.gameType) {
+          pCopy.gameType = matchedGame?.type || matchedTemplate?.type || 'custom_html';
+        }
+        const isModular = pCopy.gameType?.startsWith('modular_') || pCopy.gameType === 'memory' || pCopy.gameType === 'game1' || pCopy.gameType === 'game2' || pCopy.gameType === 'game3';
+        if (!isModular && !pCopy.gameCode) {
+          pCopy.gameCode = matchedGame?.code || matchedTemplate?.code || '';
+        }
+      }
+      setEditingPage(pCopy);
       setPageEditorTab(page.isGame ? 'game' : 'content');
     } else {
       const nextId = editingModule.pages.length > 0 ? Math.max(...editingModule.pages.map(p => p.id)) + 1 : 0;
@@ -1325,6 +1365,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // --- Handlers: Pull Student & Class Data From Spreadsheet (Auto or Manual) ---
+  const handlePullFromSpreadsheetUrl = async (customUrl?: string) => {
+    const rawTarget = (customUrl !== undefined ? customUrl : spreadsheetInput).trim();
+    const effectiveUrl = rawTarget || settings.sheetUrl || settings.sheetId || SPREADSHEET_CONFIG.studentCsvOrSheetId || SPREADSHEET_CONFIG.spreadsheetId;
+
+    if (!effectiveUrl) {
+      showNotification('Harap masukkan Tautan Google Spreadsheet atau ID Spreadsheet terlebih dahulu!', 'error');
+      return;
+    }
+
+    setIsPullingCsv(true);
+    setIsAutoPullingSheet(true);
+    showNotification('Sedang membaca data Google Spreadsheet & mendeteksi kelas...', 'info');
+
+    try {
+      const resolvedCsv = resolveCsvUrl(effectiveUrl);
+      const result = await sheetService.pullStudentsFromCsv(resolvedCsv);
+
+      if (!result.success || !result.students || !result.classes) {
+        showNotification(result.message || 'Gagal membaca data dari Google Spreadsheet.', 'error');
+        return;
+      }
+
+      if (result.classes.length === 0 || result.students.length === 0) {
+        showNotification('File CSV berhasil dibaca tetapi tidak menemukan data siswa atau kelas yang valid.', 'error');
+        return;
+      }
+
+      // 1. Simpan ke penyimpanan lokal (Local Storage) & Firestore service
+      await firestoreService.replaceAllClasses(result.classes);
+      await firestoreService.replaceAllStudents(result.students);
+
+      try {
+        localStorage.setItem('ipa_firestore_cache_classes', JSON.stringify(result.classes));
+        localStorage.setItem('ipa_firestore_cache_students', JSON.stringify(result.students));
+        const nowIso = new Date().toISOString();
+        localStorage.setItem('ipa_firestore_cache_classes_last_sync', nowIso);
+        localStorage.setItem('ipa_firestore_cache_students_last_sync', nowIso);
+        localStorage.setItem('ipa_last_sheet_sync_time', new Date().toLocaleString('id-ID'));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
+
+      // 2. Simpan tautan dan perbarui pengaturan
+      const finalSheetUrl = resolveSheetUrl(effectiveUrl);
+      const finalSheetId = extractSpreadsheetId(effectiveUrl);
+      const updatedSettings: AppSettings = {
+        ...settings,
+        sheetUrl: finalSheetUrl,
+        sheetId: finalSheetId,
+        studentCsvUrl: resolvedCsv
+      };
+      await firestoreService.saveSettings(updatedSettings);
+      setSettings(updatedSettings);
+      setSpreadsheetInput(effectiveUrl);
+      setCsvInput(resolvedCsv);
+      setStudentCsvUrl(resolvedCsv);
+
+      // 3. Perbarui state
+      setClasses(result.classes);
+      setStudents(result.students);
+
+      showNotification(
+        `Berhasil! Terdeteksi ${result.classes.length} kelas dan ${result.students.length} siswa. Data tersimpan di penyimpanan lokal browser!`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Error auto-pulling spreadsheet:', err);
+      showNotification(`Gagal menarik data siswa: ${err?.message || err}`, 'error');
+    } finally {
+      setIsPullingCsv(false);
+      setIsAutoPullingSheet(false);
+    }
+  };
+
+  const handleSpreadsheetPaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const pastedText = e.clipboardData.getData('text').trim();
+    if (pastedText) {
+      setSpreadsheetInput(pastedText);
+      setTimeout(() => {
+        handlePullFromSpreadsheetUrl(pastedText);
+      }, 50);
+    }
+  };
+
+  const handleCsvPaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const pastedText = e.clipboardData.getData('text').trim();
+    if (pastedText) {
+      setCsvInput(pastedText);
+      setTimeout(() => {
+        handlePullFromSpreadsheetUrl(pastedText);
+      }, 50);
+    }
+  };
+
   // --- Handlers: Pull Data From Google Sheet ---
   const handlePullDataFromSheet = async () => {
     if (!settings.googleAppsScriptUrl || !settings.googleAppsScriptUrl.trim().startsWith('http')) {
@@ -1549,6 +1684,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     {
       category: 'Siswa & Kelas',
       items: [
+        { id: 'spreadsheet' as const, label: 'Login Siswa', icon: Users, count: students.length, color: 'text-emerald-600' },
         { id: 'nilai' as const, label: 'Rekapitulasi Nilai', icon: BarChart3, count: scores.length, color: 'text-emerald-600' },
         { id: 'log' as const, label: 'Log Aktivitas', icon: Activity, count: undefined, color: 'text-emerald-600' }
       ]
@@ -1557,7 +1693,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       category: 'Integrasi & Sistem',
       items: [
         { id: 'appscript' as const, label: 'Kode App Script', icon: Code2, count: undefined, color: 'text-indigo-600', badgeClass: 'bg-indigo-100 text-indigo-800' },
-        { id: 'spreadsheet' as const, label: 'Login', icon: FileSpreadsheet, count: undefined, color: 'text-emerald-600' },
         { id: 'pengaturan' as const, label: 'Pengaturan Umum', icon: Settings, count: undefined, color: 'text-emerald-600' },
         { id: 'firebase' as const, label: 'Firebase', icon: Flame, count: undefined, color: 'text-amber-600' }
       ]
@@ -2025,15 +2160,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-700 mb-1">
                               Judul Modul
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={editingModule.title}
                               onChange={e => {
                                 const newTitle = e.target.value;
                                 setEditingModule({ ...editingModule, title: newTitle });
                                 setModules(prev => prev.map(m => m.id === editingModule.id ? { ...m, title: newTitle } : m));
                               }}
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
                             />
                           </div>
 
@@ -2041,11 +2176,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-700 mb-1">
                               Sub-judul / Topik Materi
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={editingModule.subtitle}
                               onChange={e => setEditingModule({ ...editingModule, subtitle: e.target.value })}
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-medium"
                             />
                           </div>
 
@@ -2053,12 +2188,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-700 mb-1">
                               Password Pembuka Modul (Kosongkan jika bebas)
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               placeholder="Contoh: 121212"
                               value={editingModule.password || ''}
                               onChange={e => setEditingModule({ ...editingModule, password: e.target.value })}
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
                             />
                           </div>
                         </div>
@@ -2174,19 +2309,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         <h5 className="text-xs font-bold text-slate-900 truncate">
                                           {page.title || `Halaman ${idx + 1}`}
                                         </h5>
-                                        {page.isGame && (
-                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 shrink-0 flex items-center gap-1">
-                                            <Gamepad2 size={11} />
-                                            {page.gameType === 'custom_tsx' ? 'Game TSX/React' : page.gameType === 'custom_html' ? 'Game HTML5' : 'Game Edukasi'}
-                                          </span>
-                                        )}
                                       </div>
                                       <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-500">
-                                        {page.isGame && (
-                                          <span className="inline-flex items-center gap-0.5 text-indigo-600 font-semibold">
-                                            <Code2 size={11} /> Kode Game Aktif
-                                          </span>
-                                        )}
                                         {page.videoUrl && (
                                           <span className="inline-flex items-center gap-0.5 text-rose-600 font-semibold">
                                             <Video size={11} /> Video
@@ -2195,11 +2319,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         {page.imageUrl && (
                                           <span className="inline-flex items-center gap-0.5 text-sky-600 font-semibold">
                                             <ImageIcon size={11} /> Gambar
-                                          </span>
-                                        )}
-                                        {page.quiz && (
-                                          <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold">
-                                            <HelpCircle size={11} /> Pertanyaan Refleksi
                                           </span>
                                         )}
                                         {page.isSheet && (
@@ -2248,7 +2367,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 title={`Buka dan uji Modul ${editingModule.id} di tampilan siswa`}
                               >
                                 <Eye size={18} />
-                                <span>Pratinjau</span>
+                                <span>Lihat</span>
                               </button>
 
                               <button
@@ -2265,7 +2384,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 ) : (
                                   <>
                                     <Save size={18} />
-                                    <span>Simpan Perubahan Modul {editingModule.id}</span>
+                                    <span>SIMPAN</span>
                                   </>
                                 )}
                               </button>
@@ -2515,18 +2634,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   {/* Add Class Form */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center gap-3">
-                    <input
-                      type="text"
+                    <AutoResizeTextarea
+                      rows={1}
                       placeholder="Masukkan Nama Kelas (misal: 7A, 8A, 9A)..."
                       value={newClassName}
                       disabled={isAddingClass}
                       onChange={e => setNewClassName(e.target.value)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter' && !isAddingClass && newClassName.trim()) {
+                        if (e.key === 'Enter' && !e.shiftKey && !isAddingClass && newClassName.trim()) {
+                          e.preventDefault();
                           handleAddClass();
                         }
                       }}
-                      className="flex-1 min-w-[200px] px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-semibold uppercase disabled:bg-slate-100 disabled:text-slate-400"
+                      className="flex-1 min-w-[200px] max-w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-semibold uppercase disabled:bg-slate-100 disabled:text-slate-400"
                     />
                     <button
                       onClick={handleAddClass}
@@ -2748,12 +2868,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-3">
-                      <input
-                        type="text"
+                      <AutoResizeTextarea
+                        rows={1}
                         placeholder="Contoh: https://docs.google.com/spreadsheets/d/.../pub?output=csv"
                         value={studentCsvUrl}
                         onChange={e => setStudentCsvUrl(e.target.value)}
-                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
+                        className="flex-1 min-w-0 max-w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono"
                       />
                       <button
                         onClick={handlePullStudentsFromCsv}
@@ -3127,60 +3247,370 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ========================================================================= */}
-              {/* TAB 7: LOGIN                                                             */}
+              {/* TAB: LOGIN SISWA & DATA SPREADSHEET                                      */}
               {/* ========================================================================= */}
-              {activeTab === 'spreadsheet' && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4 max-w-4xl">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        Link / ID Spreadsheet
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Link atau ID Spreadsheet"
-                        value={spreadsheetInput}
-                        onChange={e => setSpreadsheetInput(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900"
-                      />
+              {activeTab === 'spreadsheet' && (() => {
+                const previewFilteredStudents = students.filter(s => {
+                  const matchClass = previewStudentClassFilter === 'ALL' || (s.userClass && s.userClass.toUpperCase() === previewStudentClassFilter.toUpperCase());
+                  const matchSearch = !previewStudentSearch || 
+                    (s.name && s.name.toLowerCase().includes(previewStudentSearch.toLowerCase())) || 
+                    (s.nisn && s.nisn.toLowerCase().includes(previewStudentSearch.toLowerCase()));
+                  return matchClass && matchSearch;
+                });
+
+                return (
+                  <div className="space-y-6 max-w-5xl">
+                    {/* Header Tab */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900">Login Siswa & Data Spreadsheet</h2>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Tautkan Google Spreadsheet untuk menarik data siswa & kelas secara otomatis. Data otomatis tersimpan di penyimpanan lokal browser untuk login siswa cepat.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={resolveSheetUrl(spreadsheetInput || settings.sheetUrl || SPREADSHEET_CONFIG.spreadsheetId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                          title="Buka file Google Spreadsheet terhubung di tab baru untuk melihat dan mengedit data siswa"
+                        >
+                          <FileSpreadsheet size={15} />
+                          <span>Buka Google Spreadsheet</span>
+                          <ExternalLink size={13} />
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePullFromSpreadsheetUrl()}
+                          disabled={isPullingCsv || isAutoPullingSheet}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all border border-slate-300 shadow-xs cursor-pointer disabled:opacity-50"
+                          title="Tarik ulang data siswa dan kelas terbaru dari Google Spreadsheet"
+                        >
+                          <RefreshCw size={14} className={isPullingCsv || isAutoPullingSheet ? 'animate-spin text-emerald-600' : ''} />
+                          <span>{isPullingCsv || isAutoPullingSheet ? 'Menarik Data...' : 'Tarik Ulang Data'}</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        Link / ID CSV
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Link atau ID CSV"
-                        value={csvInput}
-                        onChange={e => setCsvInput(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900"
-                      />
-                    </div>
-                  </div>
+                    {/* Section 1: Kolom Input Link Spreadsheet yang Bisa Diedit */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                      <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                          <FileSpreadsheet size={20} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">Tautan Google Spreadsheet Data Siswa</h3>
+                          <p className="text-xs text-slate-500">
+                            Kolom tautan spreadsheet dapat diedit. Data akan <strong className="text-emerald-700 font-semibold">otomatis ditarik saat link ditempelkan</strong> dan tersimpan di penyimpanan lokal browser.
+                          </p>
+                        </div>
+                      </div>
 
-                  <div>
-                    <button
-                      type="button"
-                      onClick={handleSaveSpreadsheetConfig}
-                      disabled={isSavingSettings}
-                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
-                    >
-                      {isSavingSettings ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          <span>Menyimpan...</span>
-                        </>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                            <span>Link / URL Google Spreadsheet (Bisa Diedit)</span>
+                            {spreadsheetInput && (
+                              <span className="text-[11px] font-normal text-emerald-600 flex items-center gap-1">
+                                <Check size={12} /> Tautan terhubung
+                              </span>
+                            )}
+                          </label>
+                          <div className="relative">
+                            <AutoResizeTextarea
+                              rows={1}
+                              placeholder="Contoh: https://docs.google.com/spreadsheets/d/15u_RpWrMHwTRDau0H5fwiM_EAAOHKe0dwVPVLIOzA9Y/edit"
+                              value={spreadsheetInput}
+                              onChange={e => setSpreadsheetInput(e.target.value)}
+                              onPaste={handleSpreadsheetPaste}
+                              className="w-full max-w-full min-w-0 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900 pr-24"
+                            />
+                            {spreadsheetInput && (
+                              <a
+                                href={resolveSheetUrl(spreadsheetInput)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="absolute right-2.5 top-2.5 px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all"
+                                title="Buka link ini di tab baru"
+                              >
+                                <span>Buka</span>
+                                <ExternalLink size={11} />
+                              </a>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Tempelkan tautan Google Spreadsheet di atas untuk langsung menarik data siswa & kelas secara otomatis.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                            Link / URL CSV Web Publish (Opsional / Otomatis)
+                          </label>
+                          <AutoResizeTextarea
+                            rows={1}
+                            placeholder="Contoh: https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
+                            value={csvInput}
+                            onChange={e => setCsvInput(e.target.value)}
+                            onPaste={handleCsvPaste}
+                            className="w-full max-w-full min-w-0 px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden font-mono text-slate-900"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons Bar */}
+                      <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePullFromSpreadsheetUrl()}
+                          disabled={isPullingCsv || isAutoPullingSheet}
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed"
+                        >
+                          {isPullingCsv || isAutoPullingSheet ? (
+                            <>
+                              <Loader2 size={15} className="animate-spin" />
+                              <span>Menarik & Menganalisis Data...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download size={15} />
+                              <span>Tarik Data Siswa Sekarang</span>
+                            </>
+                          )}
+                        </button>
+
+                        <a
+                          href={resolveSheetUrl(spreadsheetInput || settings.sheetUrl || SPREADSHEET_CONFIG.spreadsheetId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+                          title="Buka file Google Spreadsheet untuk mengedit nama atau kelas siswa"
+                        >
+                          <FileSpreadsheet size={15} />
+                          <span>Buka Spreadsheet untuk Mengedit Siswa</span>
+                          <ExternalLink size={13} />
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={handleSaveSpreadsheetConfig}
+                          disabled={isSavingSettings}
+                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-300"
+                        >
+                          {isSavingSettings ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Menyimpan...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} />
+                              <span>Simpan Tautan</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Panduan Kolaborasi & Akses Terbuka */}
+                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-emerald-950 leading-relaxed">
+                        <Info size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="font-bold text-emerald-900">
+                            Informasi Pengelolaan & Perubahan Data Terbuka:
+                          </p>
+                          <p>
+                            1. Klik tombol <strong>"Buka Spreadsheet untuk Mengedit Siswa"</strong> untuk menambah, menghapus, atau mengganti nama siswa langsung di Google Spreadsheet.
+                          </p>
+                          <p>
+                            2. Pastikan izin akses Google Spreadsheet diatur ke <em>"Siapa saja yang memiliki link dapat melihat/mengedit"</em> agar spreadsheet dapat diakses langsung oleh siapapun yang berwenang.
+                          </p>
+                          <p>
+                            3. Saat tautan ditempelkan atau tombol <strong>"Tarik Data Siswa Sekarang"</strong> diklik, seluruh kelas dan siswa akan diperbarui dan <strong>otomatis tersimpan di penyimpanan lokal browser</strong> untuk mempermudah login siswa tanpa delay.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Preview Kelas & Siswa Terdeteksi */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                            <School size={20} />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900">Preview Kelas Terdeteksi</h3>
+                            <p className="text-xs text-slate-500">
+                              Daftar kelas dan siswa yang berhasil ditarik dan tersimpan di lokal untuk layar login siswa.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Stats Badges */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                            <School size={14} />
+                            <span>{classes.length} Kelas Terdeteksi</span>
+                          </div>
+                          <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                            <Users size={14} />
+                            <span>{students.length} Siswa Terdaftar</span>
+                          </div>
+                          <div className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                            <ShieldCheck size={14} />
+                            <span>Tersimpan di Lokal</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {classes.length === 0 ? (
+                        <div className="py-12 px-4 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                            <School size={24} />
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-700">Belum Ada Kelas Terdeteksi</h4>
+                          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                            Tempelkan link Google Spreadsheet Anda di kolom atas atau klik tombol <strong>"Tarik Data Siswa Sekarang"</strong> untuk mendeteksi daftar kelas dan siswa secara otomatis.
+                          </p>
+                        </div>
                       ) : (
-                        <>
-                          <Save size={14} />
-                          <span>Simpan</span>
-                        </>
+                        <div className="space-y-4">
+                          {/* Class Pills Navigation */}
+                          <div>
+                            <div className="text-xs font-bold text-slate-700 mb-2 flex items-center justify-between">
+                              <span>Pilih Kelas untuk Melihat Siswa:</span>
+                              <span className="text-[11px] font-normal text-slate-500">
+                                Klik salah satu kelas di bawah untuk memfilter
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewStudentClassFilter('ALL')}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  previewStudentClassFilter === 'ALL'
+                                    ? 'bg-slate-900 text-white shadow-xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                Semua Kelas ({students.length})
+                              </button>
+                              {classes.map(cls => {
+                                const clsName = cls.name || cls.id;
+                                const count = students.filter(s => s.userClass && s.userClass.toUpperCase() === clsName.toUpperCase()).length;
+                                const isSelected = previewStudentClassFilter.toUpperCase() === clsName.toUpperCase();
+                                return (
+                                  <button
+                                    key={`preview-cls-pill-${cls.id || cls.name}`}
+                                    type="button"
+                                    onClick={() => setPreviewStudentClassFilter(clsName)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                      isSelected
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60'
+                                    }`}
+                                  >
+                                    <span>Kelas {clsName}</span>
+                                    <span className={`px-1.5 py-0.2 rounded-md text-[10px] ${
+                                      isSelected ? 'bg-emerald-700 text-white' : 'bg-emerald-200/70 text-emerald-900'
+                                    }`}>
+                                      {count}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Search bar inside preview */}
+                          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                            <div className="relative flex-1 min-w-[220px]">
+                              <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                              <input
+                                type="text"
+                                placeholder="Cari nama siswa atau NISN di kelas ini..."
+                                value={previewStudentSearch}
+                                onChange={e => setPreviewStudentSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-hidden"
+                              />
+                              {previewStudentSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewStudentSearch('')}
+                                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X size={13} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="text-xs text-slate-500 font-medium">
+                              Menampilkan <strong className="text-slate-800">{previewFilteredStudents.length}</strong> siswa
+                              {previewStudentClassFilter !== 'ALL' && <span> di Kelas <strong className="text-emerald-700">{previewStudentClassFilter}</strong></span>}
+                            </div>
+                          </div>
+
+                          {/* Student Table Preview */}
+                          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                            <div className="max-h-96 overflow-y-auto">
+                              <table className="w-full text-left text-xs text-slate-700">
+                                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 border-b border-slate-200">
+                                  <tr>
+                                    <th className="py-2.5 px-3 w-12 text-center">No</th>
+                                    <th className="py-2.5 px-4">Nama Lengkap Siswa</th>
+                                    <th className="py-2.5 px-3">Kelas</th>
+                                    <th className="py-2.5 px-3">NISN / ID</th>
+                                    <th className="py-2.5 px-3 text-center">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {previewFilteredStudents.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                                        Tidak ada siswa yang cocok dengan pencarian atau filter kelas ini.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    previewFilteredStudents.map((std, idx) => (
+                                      <tr key={`prev-std-${std.id || idx}`} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-2.5 px-3 text-center text-slate-400 font-mono text-[11px]">
+                                          {idx + 1}
+                                        </td>
+                                        <td className="py-2.5 px-4 font-semibold text-slate-900 flex items-center gap-2">
+                                          <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                            {std.name ? std.name.charAt(0).toUpperCase() : 'S'}
+                                          </div>
+                                          <span>{std.name}</span>
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md font-bold text-[11px]">
+                                            {std.userClass}
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
+                                          {std.nisn || '-'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center">
+                                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
+                                            Aktif
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ========================================================================= */}
               {/* TAB PENGATURAN LOGO, SIDEBAR, HALAMAN UTAMA & UMUM                       */}
@@ -3284,9 +3714,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               )}
                             </div>
 
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <input
-                                type="text"
+                             <div className="flex flex-col sm:flex-row gap-2">
+                              <AutoResizeTextarea
+                                rows={1}
                                 value={logoUrlInput}
                                 onChange={e => {
                                   setLogoUrlInput(e.target.value);
@@ -3301,7 +3731,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   }
                                 }}
                                 placeholder="https://... (contoh: link Google Drive, ImgBB, atau URL gambar .png/.jpg)"
-                                className="flex-1 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-mono"
+                                className="flex-1 min-w-0 max-w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-mono"
                               />
                               <button
                                 type="button"
@@ -3369,12 +3799,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <label className="block text-xs font-bold text-slate-800 mb-1">
                                 Teks Judul Logo
                               </label>
-                              <input
-                                type="text"
+                              <AutoResizeTextarea
+                                rows={1}
                                 value={settings.logoTitle || ''}
                                 onChange={e => setSettings({ ...settings, logoTitle: e.target.value })}
                                 placeholder="Yuk Berkebun"
-                                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                                className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                               />
                             </div>
 
@@ -3382,12 +3812,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <label className="block text-xs font-bold text-slate-800 mb-1">
                                 Teks Subjudul Logo
                               </label>
-                              <input
-                                type="text"
+                              <AutoResizeTextarea
+                                rows={1}
                                 value={settings.logoSubtitle || ''}
                                 onChange={e => setSettings({ ...settings, logoSubtitle: e.target.value })}
                                 placeholder="Modul Digital"
-                                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                                className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                               />
                             </div>
                           </div>
@@ -3440,12 +3870,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Judul Header Sidebar
                           </label>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.sidebarTitle || ''}
                             onChange={e => setSettings({ ...settings, sidebarTitle: e.target.value })}
                             placeholder="Yuk Berkebun"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
 
@@ -3453,12 +3883,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Subjudul Header Sidebar
                           </label>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.sidebarSubtitle || ''}
                             onChange={e => setSettings({ ...settings, sidebarSubtitle: e.target.value })}
                             placeholder="Modul Digital"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
                       </div>
@@ -3467,12 +3897,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <label className="block text-xs font-bold text-slate-800 mb-1">
                           Catatan / Footer Teks Sidebar
                         </label>
-                        <input
-                          type="text"
+                        <AutoResizeTextarea
+                          rows={1}
                           value={settings.sidebarFooterText || ''}
                           onChange={e => setSettings({ ...settings, sidebarFooterText: e.target.value })}
                           placeholder="SMPN 1 Bengkalis"
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                          className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                         />
                       </div>
 
@@ -3508,12 +3938,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Judul Sambutan Utama (Welcome Title)
                           </label>
-                          <textarea
-                            rows={2}
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.homeWelcomeTitle || ''}
                             onChange={e => setSettings({ ...settings, homeWelcomeTitle: e.target.value })}
                             placeholder="Selamat Datang di Modul Berkebun SMPN 1 Bengkalis"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                           <p className="text-[11px] text-slate-500 mt-1">
                             Dapat ditulis dalam beberapa baris (Enter) sesuai kebutuhan format teks di layar utama.
@@ -3524,12 +3954,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Subjudul Sambutan (Opsional)
                           </label>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.homeWelcomeSubtitle || ''}
                             onChange={e => setSettings({ ...settings, homeWelcomeSubtitle: e.target.value })}
                             placeholder="Modul Digital Pembelajaran IPA"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
 
@@ -3537,12 +3967,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Kata Mutiara / Kutipan Inspirasi
                           </label>
-                          <textarea
-                            rows={2}
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.homeQuote || ''}
                             onChange={e => setSettings({ ...settings, homeQuote: e.target.value })}
                             placeholder='"Janganlah engkau mengucapkan perkataan yang engkau sendiri tidak suka mendengarnya ketika orang lain mengucapkannya kepadamu."'
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden italic"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden italic"
                           />
                         </div>
 
@@ -3551,12 +3981,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-800 mb-1">
                               Teks Tombol Aksi Utama (CTA Button)
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={settings.homeButtonText || ''}
                               onChange={e => setSettings({ ...settings, homeButtonText: e.target.value })}
                               placeholder="MULAI BELAJAR"
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-bold"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-bold"
                             />
                           </div>
 
@@ -3564,12 +3994,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-800 mb-1">
                               Teks Hak Cipta / Copyright Footer
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={settings.homeCopyright || ''}
                               onChange={e => setSettings({ ...settings, homeCopyright: e.target.value })}
                               placeholder="Copyright © SMPN 1 BENGKALIS"
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                             />
                           </div>
                         </div>
@@ -3649,12 +4079,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Nama Sekolah / Lembaga
                           </label>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.schoolName || ''}
                             onChange={e => setSettings({ ...settings, schoolName: e.target.value })}
                             placeholder="SMPN 1 Bengkalis"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
 
@@ -3662,12 +4092,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Judul Aplikasi Modul
                           </label>
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.appTitle || ''}
                             onChange={e => setSettings({ ...settings, appTitle: e.target.value })}
                             placeholder="Modul Belajar Berkebun IPA SMP"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
 
@@ -3699,12 +4129,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Judul Sambutan Login
                           </label>
-                          <textarea
-                            rows={2}
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.loginTitle || ''}
                             onChange={e => setSettings({ ...settings, loginTitle: e.target.value })}
                             placeholder="Selamat Datang di Modul Berkebun SMPN 1 Bengkalis"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                           />
                         </div>
 
@@ -3712,12 +4142,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <label className="block text-xs font-bold text-slate-800 mb-1">
                             Kata Mutiara / Kutipan Subjudul Login
                           </label>
-                          <textarea
-                            rows={2}
+                          <AutoResizeTextarea
+                            rows={1}
                             value={settings.loginSubtitle || ''}
                             onChange={e => setSettings({ ...settings, loginSubtitle: e.target.value })}
                             placeholder="“Satu langkah kecil hari ini, Menyelamatkan hidup di masa depan”"
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden italic"
+                            className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden italic"
                           />
                         </div>
 
@@ -3726,12 +4156,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-800 mb-1">
                               Teks Tombol Masuk
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={settings.loginButtonText || ''}
                               onChange={e => setSettings({ ...settings, loginButtonText: e.target.value })}
                               placeholder="MASUK BELAJAR"
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-bold"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-bold"
                             />
                           </div>
 
@@ -3739,12 +4169,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="block text-xs font-bold text-slate-800 mb-1">
                               Teks Tagline / Footer Login
                             </label>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={settings.loginTagline || ''}
                               onChange={e => setSettings({ ...settings, loginTagline: e.target.value })}
                               placeholder="Modul Pembelajaran IPA Berkelanjutan"
-                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
+                              className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden font-semibold"
                             />
                           </div>
                         </div>
@@ -3868,7 +4298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-slate-900">
-                      {pageEditorTab === 'game' ? 'Kelola Game Edukasi Interaktif' : 'Edit Halaman Sub-Materi'}
+                      {pageEditorTab === 'game' ? 'Kelola Game Interaktif' : 'Edit Halaman Sub-Materi'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
                       Modul: <strong className="text-slate-700">{editingModule?.title}</strong>
@@ -3909,7 +4339,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setEditingPage({
                             ...editingPage,
                             isGame: true,
-                            title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : chosen.title,
+                            title: editingPage.title && !editingPage.title.startsWith('Halaman') ? editingPage.title : formatCleanGameTitle(chosen.title),
                             gameId: chosen.id,
                             gameType: chosen.type,
                             gameCode: chosen.code || '',
@@ -3934,7 +4364,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <optgroup label="Pilih Game Interaktif:">
                       {games.map(g => (
                         <option key={`game-sel-${g.id}`} value={g.id}>
-                          🎮 {g.title}
+                          🎮 {formatCleanGameTitle(g.title)}
                         </option>
                       ))}
                       {games.length === 0 && (
@@ -3947,35 +4377,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {/* 2. Judul Halaman Input */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Judul Halaman</label>
-                  <input
-                    type="text"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={editingPage.title}
                     onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
                     placeholder="Judul halaman..."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-hidden transition-all"
+                    className="w-full max-w-full min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-hidden transition-all"
                   />
                 </div>
 
                 {/* 3. Area Isi Materi: Preview Game (jika isGame) atau RichTextEditor (jika Teks) */}
                 {editingPage.isGame ? (
                   <div className="space-y-2">
-                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between text-xs">
-                      <span className="font-bold text-purple-950 flex items-center gap-1.5">
-                        <Gamepad2 size={15} className="text-purple-600 shrink-0" />
-                        <span>Pratinjau Game Interaktif: {editingPage.title}</span>
-                      </span>
-                    </div>
-
                     <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs bg-white min-h-[300px]">
-                      <CustomGameRenderer
-                        code={editingPage.gameCode || ''}
-                        gameType={editingPage.gameType || 'custom_html'}
-                        title={editingPage.title || 'Game Edukasi Interaktif'}
-                        instructions={editingPage.gameInstructions}
-                        onComplete={(score) => {
-                          showNotification(`Uji Coba Berhasil! Skor game: ${score || 100} poin.`, 'success');
-                        }}
-                      />
+                      {(() => {
+                        const activeGameObj = games.find(g => g.id === editingPage.gameId);
+                        const activeTemplateObj = GAME_TEMPLATES.find(t => t.id === editingPage.gameId || t.type === editingPage.gameType);
+
+                        const effectiveGameType = editingPage.gameType || 
+                          activeGameObj?.type || 
+                          activeTemplateObj?.type || 
+                          'custom_html';
+
+                        const effectiveGameCode = editingPage.gameCode || 
+                          activeGameObj?.code || 
+                          activeTemplateObj?.code || '';
+
+                        if (effectiveGameType === 'modular_game1' || effectiveGameType === 'game1' || editingPage.gameId === 'game_1') {
+                          return (
+                            <div className="p-3">
+                              <Game1 
+                                onGameComplete={() => {
+                                  showNotification('Uji Coba Berhasil! Game Tebak Sayuran Selesai.', 'success');
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+
+                        if (effectiveGameType === 'modular_game2' || effectiveGameType === 'game2' || editingPage.gameId === 'game_2') {
+                          return (
+                            <div className="p-3">
+                              <Game2 
+                                onGameComplete={() => {
+                                  showNotification('Uji Coba Berhasil! Game Tanaman Pangan Selesai.', 'success');
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+
+                        if (effectiveGameType === 'modular_game3' || effectiveGameType === 'game3' || editingPage.gameId === 'game_3') {
+                          return (
+                            <div className="p-3">
+                              <Game3 
+                                onGameComplete={() => {
+                                  showNotification('Uji Coba Berhasil! Game Bumbu & Rimpang Selesai.', 'success');
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+
+                        if (effectiveGameType === 'memory' || editingPage.gameId === 'game_memory') {
+                          return (
+                            <div className="p-3">
+                              <MemoryGame 
+                                onLevelComplete={() => {
+                                  showNotification('Uji Coba Berhasil! Game Memori Selesai.', 'success');
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <CustomGameRenderer
+                            code={effectiveGameCode}
+                            gameType={effectiveGameType as 'custom_html' | 'custom_tsx'}
+                            title={formatCleanGameTitle(editingPage.title) || 'Game Interaktif'}
+                            instructions={editingPage.gameInstructions || activeGameObj?.instructions}
+                            onComplete={(score) => {
+                              showNotification(`Uji Coba Berhasil! Skor game: ${score || 100} poin.`, 'success');
+                            }}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : (
@@ -4074,8 +4561,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       {/* Input Kalimat Pertanyaan */}
-                      <input
-                        type="text"
+                      <AutoResizeTextarea
+                        rows={1}
                         placeholder="Tuliskan pertanyaan refleksi..."
                         value={editingPage.quiz.question}
                         onChange={e => {
@@ -4086,7 +4573,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             quiz: { ...editingPage.quiz!, question: qVal }
                           });
                         }}
-                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-hidden"
+                        className="w-full max-w-full min-w-0 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-hidden"
                       />
 
                       {/* Options */}
@@ -4094,8 +4581,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {editingPage.quiz.options.map((opt, oIdx) => (
                           <div key={opt.id} className="flex items-center gap-2">
                             <span className="font-bold text-amber-900 w-4 text-center">{opt.id}.</span>
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
+                              rows={1}
                               value={opt.text}
                               onChange={e => {
                                 const newOpts = [...editingPage.quiz!.options];
@@ -4106,7 +4593,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 });
                               }}
                               placeholder={`Pilihan ${opt.id}...`}
-                              className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                              className="flex-1 min-w-0 max-w-full px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                             />
                             <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-amber-200 rounded-xl text-[11px] font-bold text-emerald-800 shrink-0 cursor-pointer hover:bg-emerald-50 transition-colors">
                               <input
@@ -4188,7 +4675,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ) : (
                     <>
                       <Save size={15} />
-                      <span>Simpan Perubahan</span>
+                      <span>SIMPAN</span>
                     </>
                   )}
                 </button>
@@ -4225,12 +4712,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Pertanyaan</label>
-                  <textarea
-                    rows={3}
+                  <AutoResizeTextarea
+                    rows={1}
                     value={editingQuestion.question}
                     onChange={e => setEditingQuestion({ ...editingQuestion, question: e.target.value })}
                     placeholder="Tuliskan soal pilihan ganda di sini..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-medium"
+                    className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white outline-hidden"
                   />
                 </div>
 
@@ -4243,8 +4730,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }`}>
                         {opt.id}
                       </span>
-                      <input
-                        type="text"
+                      <AutoResizeTextarea
+                        rows={1}
                         value={opt.text}
                         onChange={e => {
                           const options = [...editingQuestion.options];
@@ -4252,7 +4739,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setEditingQuestion({ ...editingQuestion, options });
                         }}
                         placeholder={`Teks pilihan ${opt.id}...`}
-                        className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                        className="flex-1 min-w-0 max-w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:bg-white outline-hidden"
                       />
                       <button
                         type="button"
@@ -4273,12 +4760,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">
                     Pembahasan / Penjelasan (Opsional)
                   </label>
-                  <input
-                    type="text"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={editingQuestion.explanation || ''}
                     onChange={e => setEditingQuestion({ ...editingQuestion, explanation: e.target.value })}
                     placeholder="Alasan mengapa jawaban tersebut benar..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg"
+                    className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:bg-white outline-hidden"
                   />
                 </div>
               </div>
@@ -4335,12 +4822,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Nama Lengkap Siswa</label>
-                  <input
-                    type="text"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={editingStudent.name || ''}
                     onChange={e => setEditingStudent({ ...editingStudent, name: e.target.value })}
                     placeholder="Nama siswa..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+                    className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold focus:bg-white outline-hidden"
                   />
                 </div>
 
@@ -4367,12 +4854,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">NISN / Nomor Induk (Opsional)</label>
-                  <input
-                    type="text"
+                  <AutoResizeTextarea
+                    rows={1}
                     value={editingStudent.nisn || ''}
                     onChange={e => setEditingStudent({ ...editingStudent, nisn: e.target.value })}
                     placeholder="0012345678"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono"
+                    className="w-full max-w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono focus:bg-white outline-hidden"
                   />
                 </div>
               </div>
@@ -4468,12 +4955,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {/* Search Input */}
                         <div className="relative flex-1">
                           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
+                            rows={1}
                             placeholder="Cari judul game, kategori, atau materi..."
                             value={gameSelectorSearch}
                             onChange={e => setGameSelectorSearch(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-hidden font-medium"
+                            className="w-full max-w-full min-w-0 pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-hidden font-medium"
                           />
                           {gameSelectorSearch && (
                             <button
@@ -4697,12 +5184,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">
                     Daftar Nama Siswa (1 Nama per baris)
                   </label>
-                  <textarea
-                    rows={8}
+                  <AutoResizeTextarea
+                    rows={4}
                     value={bulkStudentText}
                     onChange={e => setBulkStudentText(e.target.value)}
                     placeholder="Ahmad Fauzi&#10;Budi Santoso&#10;Citra Lestari&#10;Dewi Anggraini..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-sans"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-sans text-xs"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
                     Tips: Anda bisa langsung copy-paste satu kolom nama dari Excel / Google Sheet.

@@ -23,6 +23,7 @@ import {
 import { Material, Theme, UserProgress } from './types';
 import { THEME_PRESETS, ALL_MATERIALS } from './constants';
 import { IconComponent } from './components/IconComponent';
+import { AutoResizeTextarea } from './components/AutoResizeTextarea';
 import { SidebarItem } from './components/SidebarItem';
 import { StatCard } from './components/StatCard';
 import { Dialog } from './components/Dialog';
@@ -696,14 +697,14 @@ const App = () => {
           {/* Search Bar - Toggleable */}
           {showSearch && (
             <div className="relative mb-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-              <Icons.Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-40" />
-              <input 
-                type="text"
+              <Icons.Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-40 z-10 pointer-events-none" />
+              <AutoResizeTextarea 
+                rows={1}
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari materi..."
-                className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 pl-8 pr-2.5 text-[10px] font-bold outline-none focus:border-white/20 transition-all placeholder:opacity-40"
+                className="w-full max-w-full min-w-0 bg-white/5 border border-white/10 rounded-lg py-1.5 pl-8 pr-2.5 text-[10px] font-bold outline-none focus:border-white/20 transition-all placeholder:opacity-40"
               />
             </div>
           )}
@@ -876,17 +877,26 @@ const App = () => {
         <GardenDecorations />
         
         {/* Floating Return Button to Admin / Modul Editor */}
-        {isTeacher && (
-          <div className="fixed top-3.5 right-3.5 z-50">
+        {isTeacher && currentView !== 'admin' && (
+          <motion.div
+            drag
+            dragMomentum={false}
+            dragElastic={0.1}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="fixed top-4 right-4 z-50 touch-none select-none"
+          >
             <button
               onClick={() => setCurrentView('admin')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-950 text-white backdrop-blur-md rounded-xl shadow-2xl border border-white/20 text-xs font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              title="Kembali ke Panel Pengeditan Modul Admin"
+              className="w-12 h-12 bg-slate-900/95 hover:bg-slate-950 text-emerald-400 border-2 border-emerald-400/60 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-center cursor-grab active:cursor-grabbing transition-all group"
+              title="Kembali ke Edit Modul"
+              aria-label="Kembali ke Edit Modul"
             >
-              <Icons.ArrowLeft size={15} className="text-emerald-400" />
-              <span>Kembali ke Edit Modul</span>
+              <Icons.Pencil size={22} className="text-emerald-400 group-hover:rotate-12 transition-transform" />
             </button>
-          </div>
+          </motion.div>
         )}
         
         {/* Content View */}
