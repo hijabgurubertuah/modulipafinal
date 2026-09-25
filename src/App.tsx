@@ -173,7 +173,13 @@ const App = () => {
       }
     }
     if (savedView) {
-      setCurrentView(savedView as any);
+      if ((savedIsTeacher || savedUser?.toLowerCase() === 'gurusmp' || savedClass?.toLowerCase() === 'guru') && savedView === 'home') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView(savedView as any);
+      }
+    } else if (savedIsTeacher || savedUser?.toLowerCase() === 'gurusmp' || savedClass?.toLowerCase() === 'guru') {
+      setCurrentView('admin');
     }
     if (savedActiveModule) {
       setActiveModule(parseInt(savedActiveModule, 10));
@@ -261,9 +267,10 @@ const App = () => {
       localStorage.setItem('ipa_user', 'GURUSMP');
       localStorage.setItem('ipa_user_class', 'guru');
       localStorage.setItem('ipa_is_logged_in', 'true');
+      localStorage.setItem('ipa_current_view', 'admin');
       setIsLoggedIn(true);
       setProgress(prev => ({ ...prev, username: 'GURUSMP' }));
-      setCurrentView('home');
+      setCurrentView('admin');
       return;
     }
 
@@ -637,26 +644,6 @@ const App = () => {
             </div>
           </div>
 
-          {/* Tombol Sinkronkan Materi (Offline First / Cek Perubahan) */}
-          <button 
-            id="sidebar-sync-button"
-            onClick={() => {
-              setShowSyncModal(true);
-              setSidebarOpen(false);
-            }}
-            className="w-full mb-2 py-2 px-3 rounded-xl flex items-center justify-between transition-all font-bold text-xs bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 hover:shadow-md active:scale-95 cursor-pointer group"
-            title="Sinkronkan materi dan cek pembaruan cloud"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
-                <Icons.CloudDownload size={13} />
-              </div>
-              <span className="text-[11px] font-black uppercase tracking-wider">Sinkronkan</span>
-            </div>
-            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              Offline Mode
-            </span>
-          </button>
 
           {/* Tombol Panel Admin / Guru - HANYA MUNCUL JIKA USERNAME gurusmp */}
           {isTeacher && (
@@ -818,14 +805,30 @@ const App = () => {
         </div>
 
         {/* Sidebar Footer (Prominent) */}
-        <div className="border-t border-white/10 px-3 py-4 pb-12">
+        <div className="border-t border-white/10 px-3 py-3 pb-12 space-y-2">
+          {/* Tombol Sinkronkan di Footer Sidebar (tanpa tulisan offline mode) */}
+          <button 
+            id="sidebar-sync-button"
+            onClick={() => {
+              setShowSyncModal(true);
+              setSidebarOpen(false);
+            }}
+            className="w-full py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all font-black text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/35 hover:shadow-md active:scale-95 cursor-pointer group"
+            title="Sinkronkan materi dan cek pembaruan"
+          >
+            <div className="w-5 h-5 rounded-lg bg-emerald-500/25 text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/40 transition-colors">
+              <Icons.CloudDownload size={13} />
+            </div>
+            <span className="text-[11px] font-black uppercase tracking-wider">Sinkronkan</span>
+          </button>
+
           <div className="flex gap-2">
             <button 
               onClick={() => {
                 setShowThemeEditor(true);
                 setSidebarOpen(false);
               }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-xs font-black uppercase tracking-wider opacity-80 hover:opacity-100"
+              className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-xs font-black uppercase tracking-wider opacity-80 hover:opacity-100"
               title="Editor Tema"
             >
               <Palette size={14} />
@@ -836,7 +839,7 @@ const App = () => {
                 setShowAbout(true);
                 setSidebarOpen(false);
               }}
-              className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all opacity-60 hover:opacity-100"
+              className="w-10 h-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all opacity-60 hover:opacity-100"
               title="Tentang Aplikasi"
             >
               <Info size={16} />

@@ -258,6 +258,7 @@ export const Login: React.FC<LoginProps> = ({
                       ))}
 
                       {/* Fallback & Special Roles */}
+                      <option value="guru">GURU / PENGAJAR</option>
                       <option value="TAMU">AKSES TAMU</option>
                     </select>
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-purple-900">
@@ -271,49 +272,59 @@ export const Login: React.FC<LoginProps> = ({
                   <label className="text-[11px] text-purple-200 font-bold block mb-1 px-3 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <User size={13} className="text-purple-300" />
-                      Nama Siswa:
+                      {userClass === 'guru' ? 'Username Guru:' : 'Nama Siswa:'}
                     </span>
+                    {userClass && userClass !== 'TAMU' && userClass !== 'guru' && filteredStudents.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInputMode(prev => prev === 'select' ? 'manual' : 'select')}
+                        className="text-[10px] text-purple-300 hover:text-white cursor-pointer font-bold select-none underline"
+                      >
+                        {inputMode === 'select' ? 'Ketik Manual' : 'Pilih dari Daftar'}
+                      </button>
+                    )}
                   </label>
 
                   <div className="relative">
-                    {/* Never show 'gurusmp' by default - it is secret */}
-                    {(() => {
-                      const displayUsername = username.toLowerCase() === 'gurusmp' ? '' : username;
-                      return inputMode === 'select' && userClass && userClass !== 'TAMU' && filteredStudents.length > 0 ? (
-                        // Dropdown Mode for easier student selection
-                        <div className="relative">
-                          <select
-                            id="login-name-select"
-                            value={displayUsername}
-                            onChange={(e) => setUsername(e.target.value)}
-                            disabled={!userClass}
-                            className="w-full px-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden appearance-none cursor-pointer bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md disabled:bg-slate-200 disabled:cursor-not-allowed"
-                          >
-                            <option value="">-- PILIH NAMA ANDA --</option>
-                            {filteredStudents.map((std) => (
-                              <option key={std.id} value={std.name}>
-                                {std.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-purple-900">
-                            <ChevronDown size={20} />
-                          </div>
-                        </div>
-                      ) : (
-                        // Manual Input Mode when no student list, for TAMU, or manual toggle
-                        <input 
-                          id="login-name-input"
-                          type="text" 
-                          value={displayUsername}
+                    {inputMode === 'select' && userClass && userClass !== 'TAMU' && userClass !== 'guru' && filteredStudents.length > 0 ? (
+                      // Dropdown Mode for easier student selection
+                      <div className="relative">
+                        <select
+                          id="login-name-select"
+                          value={username}
                           onChange={(e) => setUsername(e.target.value)}
-                          placeholder={userClass ? "Ketik nama lengkap..." : "Pilih kelas terlebih dahulu"}
-                          className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
-                          autoComplete="off"
                           disabled={!userClass}
-                        />
-                      );
-                    })()}
+                          className="w-full px-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden appearance-none cursor-pointer bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md disabled:bg-slate-200 disabled:cursor-not-allowed"
+                        >
+                          <option value="">-- PILIH NAMA ANDA --</option>
+                          {filteredStudents.map((std) => (
+                            <option key={std.id} value={std.name}>
+                              {std.name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-purple-900">
+                          <ChevronDown size={20} />
+                        </div>
+                      </div>
+                    ) : (
+                      // Manual Input Mode when no student list, for GURU, TAMU, manual toggle, or prior to choosing class
+                      <input 
+                        id="login-name-input"
+                        type="text" 
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder={
+                          userClass === 'guru' 
+                            ? "Ketik username guru (gurusmp)..." 
+                            : userClass 
+                            ? "Ketik nama lengkap..." 
+                            : "Pilih kelas atau ketik 'gurusmp'..."
+                        }
+                        className="w-full pl-5 pr-5 py-3 md:py-3.5 rounded-2xl text-base md:text-lg font-bold border-2 transition-all outline-hidden bg-white/95 border-purple-300 text-purple-950 hover:border-purple-400 focus:border-purple-600 shadow-md placeholder:text-slate-400"
+                        autoComplete="off"
+                      />
+                    )}
                   </div>
                 </div>
 
